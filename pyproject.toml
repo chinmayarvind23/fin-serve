@@ -1,0 +1,15 @@
+[project]
+name = "finserve"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["fastapi", "pydantic>=2", "uvicorn", "httpx", "ray[serve]", "redis", "sqlalchemy", "psycopg[binary]", "mlflow", "opentelemetry-api", "opentelemetry-sdk", "prometheus-client"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "ruff", "pyright", "mutmut"]
+
+[tool.ruff]
+line-length = 100
+[tool.pyright]
+typeCheckingMode = "strict"
+[tool.pytest.ini_options]
+testpaths = ["tests"]

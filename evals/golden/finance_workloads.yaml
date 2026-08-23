@@ -1,0 +1,75 @@
+version: 1
+suite_id: finance-shaped-golden-v1
+status: synthetic_examples_and_schema
+
+notes:
+  - Extend with public or appropriately licensed cases during implementation.
+  - Preserve provenance for every non-synthetic case.
+  - These cases evaluate serving quality, not investment advice.
+
+cases:
+  - case_id: sec_qa_synthetic_001
+    workload: SEC_QA
+    modality: text
+    source_type: synthetic
+    input:
+      context: >
+        Example Corp reported revenue of $500 million and operating income of
+        $75 million. Operating margin equals operating income divided by revenue.
+      question: What operating margin is implied by the supplied excerpt?
+    expected:
+      numeric_value: 0.15
+    hard_checks:
+      - numeric_accuracy
+      - evidence_support
+
+  - case_id: earnings_summary_synthetic_001
+    workload: EARNINGS_SUMMARY
+    modality: text
+    source_type: synthetic
+    input:
+      transcript: >
+        Management reported revenue growth, lower gross margin because of input
+        costs, and unchanged full-year guidance. No acquisition was announced.
+    expected:
+      must_cover:
+        - revenue growth
+        - lower gross margin
+        - unchanged guidance
+      must_not_claim:
+        - acquisition announced
+    hard_checks:
+      - key_point_coverage
+      - unsupported_claim_rate
+
+  - case_id: financial_table_synthetic_001
+    workload: FINANCIAL_TABLE_EXTRACTION
+    modality: text
+    source_type: synthetic
+    input:
+      table_text: |
+        Metric | FY2025
+        Revenue | 820
+        Operating Income | 123
+        Capex | 41
+    expected:
+      revenue: 820
+      operating_income: 123
+      capex: 41
+    hard_checks:
+      - exact_field_accuracy
+      - numeric_accuracy
+      - schema_validity
+
+  - case_id: chart_reasoning_schema_001
+    workload: CHART_REASONING
+    modality: multimodal
+    source_type: synthetic_fixture_pending_image
+    expected_fields:
+      - image_artifact
+      - question
+      - answer
+      - provenance
+    hard_checks:
+      - chart_qa_accuracy
+      - visual_grounding

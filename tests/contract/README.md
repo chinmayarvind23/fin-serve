@@ -1,0 +1,3 @@
+# tests/contract
+
+Contract tests.

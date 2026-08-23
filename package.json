@@ -1,0 +1,1 @@
+{"name":"finserve-web","private":true,"scripts":{"test":"echo initialize web tests in web chunk","lint":"echo initialize Biome in web chunk","build":"echo initialize Vercel dashboard in web chunk"}}

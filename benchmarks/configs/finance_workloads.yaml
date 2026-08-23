@@ -1,0 +1,72 @@
+version: 1
+suite_id: finance-shaped-v1
+description: >
+  Representative finance-shaped inference workloads that run through the same
+  domain-agnostic FinServe serving paths as other benchmark traffic.
+
+workloads:
+  - id: SEC_QA
+    modality: text
+    input_bucket: long
+    output_bucket: short_medium
+    slo_class: interactive
+    evaluation:
+      - answer_correctness
+      - evidence_support
+      - structured_output_validity
+    serving_focus:
+      - ttft
+      - prefill_latency
+      - prefix_cache_behavior
+
+  - id: EARNINGS_SUMMARY
+    modality: text
+    input_bucket: medium_long
+    output_bucket: long
+    slo_class: throughput
+    evaluation:
+      - key_point_coverage
+      - unsupported_claim_rate
+      - length_adherence
+    serving_focus:
+      - token_throughput
+      - inter_token_latency
+      - speculative_acceptance
+      - continuous_batching
+
+  - id: FINANCIAL_TABLE_EXTRACTION
+    modality: text
+    input_bucket: medium
+    output_bucket: short_structured
+    slo_class: interactive
+    evaluation:
+      - exact_field_accuracy
+      - numeric_accuracy
+      - schema_validity
+    serving_focus:
+      - ttft
+      - request_throughput
+      - output_parity
+
+  - id: CHART_REASONING
+    modality: multimodal
+    input_bucket: image_text
+    output_bucket: short_medium
+    slo_class: interactive
+    evaluation:
+      - chart_qa_accuracy
+      - numeric_extraction_accuracy
+      - visual_grounding
+    serving_focus:
+      - vision_stage_latency
+      - end_to_end_latency
+      - gpu_memory
+      - gpu_utilization
+      - modality_aware_routing
+
+rules:
+  domain_specific_routing: false
+  preserve_failed_requests: true
+  record_raw_request_timings: true
+  report_overall_and_workload_slices: true
+  cache_policy_must_be_declared: true
