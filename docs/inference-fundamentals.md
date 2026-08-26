@@ -40,7 +40,7 @@ Completed sequences are replaced by waiting work while longer sequences continue
 
 ## Paged KV memory
 
-Block/page-based KV management reduces fragmentation. Interview mental model: logical sequence KV can map onto non-contiguous physical blocks, similar to virtual-memory paging.
+Block/page-based KV management reduces fragmentation. Mental model: logical sequence KV can map onto non-contiguous physical blocks, similar to virtual-memory paging.
 
 ## GPU utilization
 

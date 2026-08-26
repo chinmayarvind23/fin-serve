@@ -35,4 +35,4 @@ A later experiment can shorten/disable speculation after low acceptance and allo
 
 ## Visual-token research
 
-Do not assume diffusion can use text-style token verification. Explore proposal/verification only for an autoregressive discrete visual-token formulation with a defensible correctness rule. A negative result is valid evidence.
+Do not assume diffusion can use text-style token verification. Explore proposal/verification only for an autoregressive discrete visual-token formulation with a correctness rule. A negative result is valid evidence.

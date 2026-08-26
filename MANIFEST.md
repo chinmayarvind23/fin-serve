@@ -10,7 +10,7 @@ Evidence: benchmark methodology, evaluation, performance, results, reproducibili
 
 Production: security/threat model, observability, failure modes, deployment, Airflow, quality gates, runbooks.
 
-Presentation: demo, blog outline, interview prep, commands, references.
+Presentation: demo, commands, references.
 
 ADRs: 14 decisions under `docs/adr/`.
 

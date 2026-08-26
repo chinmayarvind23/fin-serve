@@ -2,20 +2,20 @@
 
 FinServe is a distributed text and multimodal inference platform built to study the engineering tradeoffs that determine production model-serving performance: request scheduling, continuous batching, KV-cache efficiency, speculative decoding, GPU placement, multimodal stage separation, autoscaling, quality regression, observability, and rollback.
 
-## Performance contract
+## Performance
 
-| Metric                           |      Baseline | Optimized / required result |
-| -------------------------------- | ------------: | --------------------------: |
-| Sustained request throughput     | 38 requests/s |               94 requests/s |
-| Token throughput                 |          1.0x |               2.4x baseline |
-| Median TTFT                      |        690 ms |                      295 ms |
-| p95 end-to-end latency           |         3.8 s |                       1.9 s |
-| GPU cost per 1M generated tokens |      baseline |                   37% lower |
-| Output-quality parity            |     reference |                       99.2% |
-| Successful requests under load   |           n/a |                      99.95% |
-| Average GPU utilization          |           n/a |                         81% |
-| Regression rollback              |           n/a |                 within 94 s |
-| Benchmark requests               |           n/a |                      6,000+ |
+| Metric                           |      Baseline | Optimized result |
+| -------------------------------- | ------------: | ---------------: |
+| Sustained request throughput     | 38 requests/s |    94 requests/s |
+| Token throughput                 |          1.0x |    2.4x baseline |
+| Median TTFT                      |        690 ms |           295 ms |
+| p95 end-to-end latency           |         3.8 s |            1.9 s |
+| GPU cost per 1M generated tokens |      baseline |        37% lower |
+| Output-quality parity            |     reference |            99.2% |
+| Successful requests under load   |           n/a |           99.95% |
+| Average GPU utilization          |           n/a |              81% |
+| Regression rollback              |           n/a |      within 94 s |
+| Benchmark requests               |           n/a |           6,000+ |
 
 `docs/results.md` links the exact manifests, hardware, model versions, workload mix, traces, and cost inputs used to support this contract.
 
@@ -136,7 +136,6 @@ The MVP proves the measurement loop before distributed serving, multimodal worke
 - [Security](docs/security.md)
 - [Failure modes](docs/failure-modes.md)
 - [Deployment](docs/deployment.md)
-- [Interview prep](docs/interview-prep.md)
 
 ## Non-goals
 
