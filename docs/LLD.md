@@ -36,7 +36,7 @@ terminal: REJECTED / CANCELLED / TIMED_OUT / ENGINE_FAILED / OVERLOADED
 
 ## Cancellation
 
-Client disconnect propagates to ingress/Ray/engine abort where supported and releases KV/cache resources.
+Client disconnect propagates to ingress/Ray/engine abort where supported and gives back KV/cache resources.
 
 ## Retry
 

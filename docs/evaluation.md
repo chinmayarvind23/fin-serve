@@ -39,4 +39,4 @@ PR CI: unit/contract/static checks and small eval.
 
 GPU integration CI: engine startup, small performance/quality/speculation/multimodal smoke.
 
-Release: 6,000+ request suite, load/failure, full quality, cost, rollback drill.
+6,000+ request suite, load/failure, full quality, cost, rollback drill.

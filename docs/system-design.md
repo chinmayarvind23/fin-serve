@@ -39,7 +39,7 @@ Explicit async semantics, but poor fit for low-TTFT streaming and duplicates Ray
 
 Supports distributed replica routing, custom policies, autoscaling, placement, and KubeRay. Selected after single-node evidence is stable.
 
-### D. Fully disaggregated multimodal stages from day one
+### D. Fully disaggregated multimodal stages
 
 Powerful but premature. Stage-disaggregation is a later measured experiment inspired by modern multimodal serving work.
 

@@ -10,7 +10,7 @@
 6. Never count dropped requests as successful throughput.
 7. Record hardware/software versions.
 8. Repeat runs and keep raw records.
-9. Separate policy-tuning workloads from final release workloads.
+9. Separate policy-tuning workloads from final workloads.
 10. Publish failed optimizations and regressions.
 
 ## Workloads
@@ -20,7 +20,7 @@
 - W3 prefill-heavy: long prompt, short output.
 - W4 frozen mixed production-like distribution for headline comparison.
 - W5 repeated-prefix for cache/routing.
-- W6 failure/adversarial: excess input, timeout, cancellation, burst overload, malformed input, engine/node failure, bad release.
+- W6 failure/adversarial: excess input, timeout, cancellation, burst overload, malformed input, engine/node failure.
 - W7 multimodal: size/resolution/output buckets.
 
 ## 6,000+ request rule

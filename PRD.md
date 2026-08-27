@@ -51,7 +51,7 @@ The product is not an LLM behind FastAPI. It is a repeatable system for measurin
 
 ### Feature C
 
-`99.95% successful requests`, `81% average GPU utilization`, and rollback within `94 s` require a load-test success definition, raw GPU samples and aggregation rule, and an induced bad-release experiment with timestamps from detection to restored healthy revision.
+`99.95% successful requests`, `81% average GPU utilization`, and rollback within `94 s` require a load-test success definition, raw GPU samples and aggregation rule, and an induced bad-experiment with timestamps from detection to restored healthy revision.
 
 ## Functional requirements
 

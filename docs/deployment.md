@@ -26,4 +26,4 @@ Tune Serve replicas, Ray worker Pods, and EKS GPU nodes independently. Maintain 
 
 ## Rollback
 
-Restore last known-good immutable revision. Measure `healthy_at - regression_detected_at`. Release criterion is within 94 seconds for the declared drill.
+Restore last known-good immutable revision. Measure `healthy_at - regression_detected_at`to happen within 94 seconds.

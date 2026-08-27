@@ -2,7 +2,7 @@
 
 ## Decision
 
-Airflow owns slow release lifecycle tasks and is excluded from online inference scheduling.
+Airflow owns slow version lifecycle tasks and is excluded from online inference scheduling.
 
 ## Evidence
 

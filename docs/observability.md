@@ -2,7 +2,7 @@
 
 ## Questions
 
-Where did latency occur? Was queueing at ingress/Ray/engine? Was GPU underfed or saturated? Did speculation accept useful tokens? Which replica served the request? Did autoscaling lag? Why did a release roll back?
+Where did latency occur? Was queueing at ingress/Ray/engine? Was GPU underfed or saturated? Did speculation accept useful tokens? Which replica served the request? Did autoscaling lag? Why did a version roll back?
 
 ## OpenTelemetry trace
 

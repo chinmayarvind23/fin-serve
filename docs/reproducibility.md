@@ -6,4 +6,4 @@ GPU inference may not be bitwise deterministic across kernels/runtimes. Distingu
 
 A comparison is invalid if a material variable changes without declaration. Different GPU hardware can support a hardware comparison.
 
-Release workload manifests are hashed before headline evidence runs.
+Workload manifests are hashed before runs.

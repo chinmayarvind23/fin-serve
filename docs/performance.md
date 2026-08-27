@@ -26,8 +26,6 @@ Median TTFT reduction is about `57.2%` from 690 to 295 ms.
 
 p95 reduction is `50%` from 3.8 to 1.9 s.
 
-Release artifacts must reproduce the absolute values.
-
 ## Utilization
 
 100% GPU utilization can be bad if queueing violates latency. Optimize useful throughput/cost subject to latency/success/quality gates.

@@ -1,6 +1,6 @@
 # Airflow Model Lifecycle
 
-Airflow coordinates slow dependency-heavy release work, never token requests.
+Airflow coordinates slow dependency-heavy work, never token requests.
 
 ```text
 verify_input_spec

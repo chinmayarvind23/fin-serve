@@ -108,12 +108,12 @@ Quality checks:
 
 ## Systems stress matrix
 
-| Workload | Modality | Input | Output | Main serving stress |
-|---|---|---|---|---|
-| `SEC_QA` | text | long | short/medium | prefill and prefix/cache behavior |
-| `EARNINGS_SUMMARY` | text | medium/long | long | decode, speculation, continuous batching |
-| `FINANCIAL_TABLE_EXTRACTION` | text/document | medium | short structured | TTFT and exact output fidelity |
-| `CHART_REASONING` | image + text | multimodal | short/medium | vision stage, routing, GPU memory |
+| Workload                       | Modality      | Input       | Output           | Main serving stress                      |
+| ------------------------------ | ------------- | ----------- | ---------------- | ---------------------------------------- |
+| `SEC_QA`                     | text          | long        | short/medium     | prefill and prefix/cache behavior        |
+| `EARNINGS_SUMMARY`           | text          | medium/long | long             | decode, speculation, continuous batching |
+| `FINANCIAL_TABLE_EXTRACTION` | text/document | medium      | short structured | TTFT and exact output fidelity           |
+| `CHART_REASONING`            | image + text  | multimodal  | short/medium     | vision stage, routing, GPU memory        |
 
 ## Data policy
 
@@ -149,7 +149,7 @@ generic scheduler and engine policy
 
 ## Reporting rule
 
-Release reports show both overall performance and slices:
+Version reports show both overall performance and slices:
 
 ```text
 overall
@@ -162,7 +162,3 @@ non-financial workload families
 ```
 
 A strong result on the finance slice cannot substitute for the declared platform-wide result.
-
-## Portfolio role
-
-This gives FinServe finance relevance through realistic workloads without duplicating CreditLens or FactorForge. FinServe remains the inference and ML-systems project.

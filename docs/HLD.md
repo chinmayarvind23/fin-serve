@@ -30,7 +30,7 @@ Ray Serve: distributed replica lifecycle, routing, autoscaling, placement.
 
 Engine: KV cache, token scheduling, continuous batching, speculation, engine metrics.
 
-Airflow: offline artifact/release lifecycle. Never blocks a token request.
+Airflow: offline artifact lifecycle. Never blocks a token request.
 
 ## Data plane
 
