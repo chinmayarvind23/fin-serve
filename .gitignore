@@ -7,6 +7,9 @@ node_modules/
 .next/
 dist/
 coverage/
+.coverage*
+htmlcov/
+mutants/
 artifacts/local/
 *.pyc
 .DS_Store

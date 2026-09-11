@@ -1,0 +1,293 @@
+"""FastAPI streaming ingress with bounded leases, explicit errors, and honest timing."""
+
+import asyncio
+import hmac
+import json
+import os
+import time
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import aclosing, asynccontextmanager
+from dataclasses import dataclass
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import ValidationError
+from starlette.types import Receive, Scope, Send
+
+from finserve.contracts.inference import ChatRequest, EngineToken, InferenceRequest
+from finserve.engines.base import Engine
+from finserve.engines.fixture import FixtureEngine
+from finserve.gateway.admission import Admission
+from finserve.gateway.body_limit import BodyLimit
+from finserve.telemetry.metrics import Metrics
+
+
+def error_response(code: str, status: int, request_id: str = "") -> JSONResponse:
+    """Stable codes allow clients to classify failure without exposing backend details."""
+    return JSONResponse(
+        {
+            "error": {
+                "code": code,
+                "message": code.replace("_", " ").lower(),
+                "retryable": status in {429, 503},
+                "request_id": request_id,
+            }
+        },
+        status_code=status,
+    )
+
+
+def sse(payload: dict[str, object]) -> str:
+    """JSON escaping prevents model text from injecting SSE control fields."""
+    return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+
+
+@dataclass
+class Lease:
+    """Idempotent ownership covers disconnects before an async generator ever starts."""
+
+    admission: Admission
+    metrics: Metrics
+    released: bool = False
+
+    def release(self) -> None:
+        """Response and generator both clean up, but only the first returns capacity."""
+        if not self.released:
+            self.released = True
+            self.admission.release()
+            self.metrics.active.dec()
+
+
+class OwnedStreamingResponse(StreamingResponse):
+    """ASGI send failures must close generation even when framework iteration aborts."""
+
+    def __init__(self, stream: AsyncGenerator[str], lease: Lease, request_id: str) -> None:
+        """Keep an explicit iterator reference instead of relying on generator finalization."""
+        super().__init__(
+            stream,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Request-ID": request_id,
+            },
+        )
+        self.stream = stream
+        self.lease = lease
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Header/body transport errors follow the same bounded cleanup path."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            try:
+                await self.stream.aclose()
+            finally:
+                self.lease.release()
+
+
+@dataclass
+class Serving:
+    """Application-scoped dependencies avoid mutable process-global request state."""
+
+    engine: Engine
+    admission: Admission
+    metrics: Metrics
+    model: str
+    api_key: str | None
+
+    async def events(
+        self, request: InferenceRequest, received: float, chat: bool, lease: Lease | None = None
+    ) -> AsyncGenerator[str]:
+        """Never retry visible output; close the iterator on failure or client cancellation."""
+        outcome, count, first = "cancelled", 0, None
+        lease = lease or Lease(self.admission, self.metrics)
+        iterator: AsyncIterator[EngineToken] | None = None
+        try:
+            iterator = self.engine.stream(request)
+            async with asyncio.timeout(request.timeout_seconds):
+                async for token in iterator:
+                    count += token.generated_tokens
+                    self.metrics.tokens.inc(token.generated_tokens)
+                    if token.text and first is None:
+                        first = time.perf_counter() - received
+                        self.metrics.ttft.observe(first)
+                    choice: dict[str, object] = {"index": 0, "finish_reason": None}
+                    choice["delta" if chat else "text"] = (
+                        {"content": token.text} if chat else token.text
+                    )
+                    yield sse(
+                        {
+                            "id": request.request_id,
+                            "model": request.model,
+                            "object": "chat.completion.chunk" if chat else "text_completion",
+                            "choices": [choice],
+                        }
+                    )
+            outcome = "success"
+            yield sse(
+                {
+                    "id": request.request_id,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "finish_reason": "length",
+                            "delta" if chat else "text": {} if chat else "",
+                        }
+                    ],
+                    "usage": {"completion_tokens": count},
+                    "finserve": {"server_ttft_seconds": first},
+                }
+            )
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            outcome = "timeout" if isinstance(exc, TimeoutError) else "engine_failed"
+            yield sse(
+                {
+                    "error": {
+                        "code": outcome.upper(),
+                        "request_id": request.request_id,
+                        "retryable": False,
+                    }
+                }
+            )
+        finally:
+            try:
+                close = getattr(iterator, "aclose", None)
+                if close is not None:
+                    await close()
+            finally:
+                lease.release()
+                self.metrics.requests.labels(outcome=outcome).inc()
+                self.metrics.duration.observe(time.perf_counter() - received)
+
+    async def respond(
+        self, payload: InferenceRequest, request: Request, chat: bool = False
+    ) -> Response:
+        """Validate before admission; the stream owns its lease until consumption finishes."""
+        received = time.perf_counter()
+        if self.api_key is not None and not hmac.compare_digest(
+            request.headers.get("authorization", "").encode(), f"Bearer {self.api_key}".encode()
+        ):
+            return error_response("UNAUTHORIZED", 401, payload.request_id)
+        if payload.model != self.model:
+            return error_response("MODEL_NOT_FOUND", 404, payload.request_id)
+        if not self.admission.acquire():
+            self.metrics.requests.labels(outcome="overloaded").inc()
+            return error_response("OVERLOADED", 429, payload.request_id)
+        self.metrics.active.inc()
+        lease = Lease(self.admission, self.metrics)
+        stream = self.events(payload, received, chat, lease)
+        try:
+            if payload.stream:
+                return OwnedStreamingResponse(stream, lease, payload.request_id)
+            return await collect_response(stream, payload, chat)
+        except BaseException:
+            lease.release()
+            raise
+
+
+async def collect_response(
+    stream: AsyncGenerator[str], payload: InferenceRequest, chat: bool
+) -> Response:
+    """Reuse stream accounting for non-stream clients so terminal semantics stay identical."""
+    output: list[str] = []
+    usage: dict[str, object] = {}
+    async with aclosing(stream):
+        async for frame in stream:
+            if frame == "data: [DONE]\n\n":
+                continue
+            data = json.loads(frame[6:])
+            if "error" in data:
+                return JSONResponse(data, status_code=502)
+            for choice in data.get("choices", []):
+                output.append(
+                    choice.get("delta", {}).get("content", "") if chat else choice.get("text", "")
+                )
+            usage = data.get("usage", usage)
+    content = "".join(output)
+    choice = {
+        "index": 0,
+        "finish_reason": "length",
+        "message" if chat else "text": {"role": "assistant", "content": content}
+        if chat
+        else content,
+    }
+    return JSONResponse(
+        {"id": payload.request_id, "model": payload.model, "choices": [choice], "usage": usage}
+    )
+
+
+def create_app(
+    engine: Engine | None = None,
+    *,
+    model: str = "reference",
+    max_concurrency: int = 16,
+    api_key: str | None = None,
+) -> FastAPI:
+    """Tests inject engines; deployments select an explicit backend through the factory."""
+    serving = Serving(
+        engine or FixtureEngine(), Admission(max_concurrency), Metrics(), model, api_key
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        """Close pooled clients when shutdown completes; Uvicorn handles request draining."""
+        yield
+        await serving.engine.close()
+
+    app = FastAPI(title="FinServe", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(BodyLimit)
+    app.state.serving = serving
+
+    @app.get("/healthz")
+    async def health() -> dict[str, str]:
+        """Liveness makes no claim about downstream GPU readiness."""
+        return {"status": "ok", "model": model}
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        """Expose fixed-cardinality operational metrics without prompt data."""
+        return Response(
+            generate_latest(serving.metrics.registry), headers={"Content-Type": CONTENT_TYPE_LATEST}
+        )
+
+    @app.post("/v1/completions", response_model=None)
+    async def completions(payload: InferenceRequest, request: Request) -> Response:
+        """The OpenAI text surface exposes only the supported generation contract."""
+        return await serving.respond(payload, request)
+
+    @app.post("/v1/chat/completions", response_model=None)
+    async def chat_completions(payload: ChatRequest, request: Request) -> Response:
+        """Reject aggregate prompt overflow rather than truncating conversation silently."""
+        try:
+            inference = payload.to_inference()
+        except ValidationError:
+            return error_response("CONTEXT_TOO_LARGE", 422)
+        return await serving.respond(inference, request, chat=True)
+
+    return app
+
+
+def from_env() -> FastAPI:
+    """Explicit fixture/reference modes prevent a fake engine masquerading as a real model."""
+    backend = os.getenv("FINSERVE_ENGINE", "fixture")
+    engine: Engine
+    if backend == "pytorch":
+        from finserve.engines.pytorch_reference import PyTorchReferenceEngine
+
+        engine = PyTorchReferenceEngine(
+            cached=os.getenv("FINSERVE_KV_CACHE", "1") == "1",
+            device=os.getenv("FINSERVE_DEVICE", "cpu"),
+        )
+    elif backend == "fixture":
+        engine = FixtureEngine()
+    else:
+        raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
+    return create_app(
+        engine,
+        model=os.getenv("FINSERVE_MODEL", "reference"),
+        max_concurrency=int(os.getenv("FINSERVE_MAX_CONCURRENCY", "16")),
+        api_key=os.getenv("FINSERVE_API_KEY"),
+    )

@@ -1,6 +1,8 @@
 # Results
 
-This file is generated from benchmarks.
+No release benchmark has been run yet. The values below are target claims and the evidence
+each would require. They are not measured results. Raw evidence and development reports are
+stored in the workspace's `resources/fin_serve/` directory, outside this source repository.
 
 | Metric                         | Evidence                                    |
 | ------------------------------ | ------------------------------------------- |

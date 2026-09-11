@@ -2,9 +2,30 @@
 
 FinServe is a distributed text and multimodal inference platform built to study the engineering tradeoffs that determine production model-serving performance: request scheduling, continuous batching, KV-cache efficiency, speculative decoding, GPU placement, multimodal stage separation, autoscaling, quality regression, observability, and rollback.
 
-## Performance
+## Development status
 
-| Metric                           |      Baseline | Optimized result |
+The repository is being implemented in measured slices. Typed contracts, bounded admission,
+streaming ingress, and a deterministic transport fixture are implemented. The remaining
+architecture below describes the intended platform until its runtime checks are recorded.
+
+Run the current local API with Python 3.12+ and uv:
+
+```bash
+uv sync
+uv run uvicorn finserve.gateway.app:from_env --factory --host 127.0.0.1 --port 8000
+curl -N http://127.0.0.1:8000/v1/completions -H 'Content-Type: application/json' -d '{"prompt":"hello","max_tokens":5}'
+uv run pytest
+uv run ruff check .
+uv run pyright
+```
+
+The default `FINSERVE_ENGINE=fixture` echoes character tokens for transport testing.
+Set `FINSERVE_API_KEY` to require bearer authentication. The fixture provides no evidence
+of language-model quality, GPU throughput, or production readiness.
+
+## Performance targets (not measured results)
+
+| Metric                           | Baseline target | Optimized target |
 | -------------------------------- | ------------: | ---------------: |
 | Sustained request throughput     | 38 requests/s |    94 requests/s |
 | Token throughput                 |          1.0x |    2.4x baseline |
@@ -17,7 +38,9 @@ FinServe is a distributed text and multimodal inference platform built to study 
 | Regression rollback              |           n/a |      within 94 s |
 | Benchmark requests               |           n/a |           6,000+ |
 
-`docs/results.md` links the exact manifests, hardware, model versions, workload mix, traces, and cost inputs used to support this contract.
+These numbers are goals. No release benchmark currently supports them.
+[`docs/results.md`](docs/results.md) tracks evidence availability and prevents planned
+results from being presented as achievements.
 
 ## What FinServe serves
 
