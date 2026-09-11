@@ -61,6 +61,22 @@ The development workload hash is `927f69f403f87f50502126aa5f7f2f0600c521cc7e7200
 
 Both models completed all 36 quality HTTP requests but scored 3/4 on the separately frozen format holdout and 10/32 on the unchanged release suite. Typed parity was 75%. Markdown-fenced JSON and exact numeric/yes-no formatting failures remained failures; outputs and graders were not normalized afterward. The actual canonical registration and lifecycle rejected the candidate for quality, with zero deployment callbacks. The planned sustained phase was not offered because its quality precondition failed. Raw quality responses, durable producer receipts, image/source identities and rejection state remain in the cohort directory.
 
+## Rejected role-mapping quality arm
+
+`chatml-quality-arm-01` tested the explicit `chatml_roles_v1` request mapping and a general formatting instruction with the same pinned Qwen2.5-1.5B-Instruct revision and model manifest as the previous image cohort. Source was `bfb45dbca816782fd54becbaba4cb9bd98f269a8`; the actual built image was `sha256:9ff0da6a12da3590fcb53ca8671711fc0dd57e4a045c8df45f4477949ac3331f`. The engine used float16, eager execution, context/batched-token limits 1,024, four sequences, memory fraction 0.45 and disabled prefix caching. Requests used temperature zero and at most 128 generated tokens.
+
+The mapper preserves the serialized system and user contents as native chat roles. Its configured instruction requests answer-only formatting without providing expected values. Mapping, instruction, suites and runtime specifications were frozen before collection. The exact/typed-JSON evaluator and thresholds were unchanged.
+
+| Population | Successful HTTP requests | Correct answers |
+| --- | ---: | ---: |
+| Release suite | 32/32 | 18/32 (56.25%) |
+| Historical format holdout | 4/4 | 3/4 (75%) |
+| Newly frozen format holdout | 20/20 | 13/20 (65%) |
+
+Correctness still failed. Remaining outputs include `0.20` where exact `0.2` was required and Markdown-fenced objects that fail typed JSON parsing. No output normalization converted these failures into passes. The twenty-case holdout is now consumed evaluation evidence for future work. These correctness scores compare against suite expectations; they do not measure baseline-versus-candidate model parity. This diagnostic arm collected no performance comparison and grants no release approval.
+
+An initial client startup failed with `ENOMEM`. The collector reconciled the same owned container and original start identity before collecting all 56 responses. The retained container state reports `OOMKilled=false`; the client error is not evidence of a container or GPU OOM. Before/after runtime observations, raw responses, grades and the exact stop receipt are retained. The owned container was stopped and removed. Reconciliation duration is not a cold-start measurement.
+
 ## Multimodal evidence
 
 Pinned Qwen2-VL-2B-Instruct revision `895c3a49bc3fa70a340399125c650a463535e71c` runs through the actual image/text adapter. The final uniform-color preprocessing comparison retained 36 successful requests and 18/18 exact local/HTTP output pairs, but 0/36 correct color answers. The rejected semantic result remains in `vision-stage-run-03-final`; earlier fp16 and bf16 cohorts also remain.

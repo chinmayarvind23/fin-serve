@@ -21,6 +21,8 @@ Token throughput increased **2.64×**, while median TTFT worsened. Exact output 
 
 [Results and limitations](docs/results.md) identify the retained evidence, rejected speculation experiment and multimodal checks. The original 94 requests/s, 99.2% parity, 81% utilization and 37% cost-reduction figures remain targets.
 
+A later image-bound Qwen2.5-1.5B diagnostic with explicit chat-role mapping scored 18/32 on the unchanged release suite and 13/20 on a separately frozen format holdout. All requests completed, but correctness still failed. This separate experiment does not change the sustained comparison above.
+
 ![Sustained comparison: faster throughput and lower p95, worse TTFT, and a failed correctness gate](docs/assets/sustained-comparison.png)
 
 ## Current capabilities
