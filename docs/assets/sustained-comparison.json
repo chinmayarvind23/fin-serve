@@ -1,0 +1,78 @@
+{
+  "source_audit_sha256": "c78aacd1677aef5c4b11d0272a9c617cef10bdb9db8477cae5d40acc4795bde2",
+  "scope": "One ordered native local GPU comparison; no randomized repeats or cloud cost.",
+  "candidate_quality_gate_passed": false,
+  "runs": [
+    {
+      "name": "vllm-sustained-eager-01",
+      "run_id": "914c1f2b-6dde-4d99-850c-ca099b6841de",
+      "workload_hash": "ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54",
+      "source_revision": "241615dc04e3623e078500de7bded65f43e30ab6",
+      "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "image_digest": "undeclared",
+      "summary": {
+        "measured_seconds": 236.40455610000026,
+        "offered_requests": 3072,
+        "successful_requests": 3072,
+        "failed_requests": 0,
+        "generated_tokens": 88301,
+        "success_rate": 1.0,
+        "requests_per_second": 12.994673413572153,
+        "tokens_per_second": 373.5164899387483,
+        "e2e_p95_s": 2.1314819499993964,
+        "client_ttft_median_s": 0.11295239999981277,
+        "server_ttft_median_s": 0.10530089999974734
+      },
+      "warmup_records": 64,
+      "gpu_utilization_percent": 29.105880566141437,
+      "gpu_coverage": 1.0,
+      "quality": {
+        "case_count": 32,
+        "candidate_accuracy": 0.3125,
+        "parity": 0.75,
+        "passed": false,
+        "suite_hash": "998b1f5dd448c2dffe247bc6fe89b5251699fb1b3fc170dc0fb427662706b463"
+      }
+    },
+    {
+      "name": "vllm-sustained-compiled-01",
+      "run_id": "a4c55327-0e45-4506-9987-3b234327dcff",
+      "workload_hash": "ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54",
+      "source_revision": "241615dc04e3623e078500de7bded65f43e30ab6",
+      "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "image_digest": "undeclared",
+      "summary": {
+        "measured_seconds": 88.81753810000009,
+        "offered_requests": 3072,
+        "successful_requests": 3072,
+        "failed_requests": 0,
+        "generated_tokens": 87711,
+        "success_rate": 1.0,
+        "requests_per_second": 34.58776347235858,
+        "tokens_per_second": 987.5414459388163,
+        "e2e_p95_s": 0.8043392350006797,
+        "client_ttft_median_s": 0.1594528999994509,
+        "server_ttft_median_s": 0.1285691000002771
+      },
+      "warmup_records": 64,
+      "gpu_utilization_percent": 57.91440434820756,
+      "gpu_coverage": 1.0,
+      "quality": {
+        "case_count": 32,
+        "candidate_accuracy": 0.3125,
+        "parity": 0.75,
+        "passed": false,
+        "suite_hash": "998b1f5dd448c2dffe247bc6fe89b5251699fb1b3fc170dc0fb427662706b463"
+      }
+    }
+  ],
+  "limitations": [
+    "Quality uses a separate frozen 32-case suite, not the load-test prompts.",
+    "Exact output agreement does not establish task correctness.",
+    "Successful HTTP samples do not establish a long-term availability SLO.",
+    "Native image/config digests remain undeclared; no container promotion claim.",
+    "The runs share one workstation GPU; order, thermal and host effects remain.",
+    "GPU utilization is observed device activity, not useful-work efficiency.",
+    "Local hardware has no measured billed cloud cost."
+  ]
+}

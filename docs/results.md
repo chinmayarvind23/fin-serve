@@ -27,6 +27,16 @@ The raw audit recomputes populations, durations, token counts, percentiles and G
 
 This is one baseline-then-candidate pair, not a randomized repeated study. Workstation activity, ordering and thermal effects remain possible confounds. All 6,144 measured requests completed, which is an observed transport outcome and not a 99.95% production availability guarantee. Local hardware produced no cloud billing evidence; no 37% GPU-cost claim is supported.
 
+![Six-panel comparison of eager and compiled serving with the rejected quality gate](assets/sustained-comparison.png)
+
+The figure is available as [SVG](assets/sustained-comparison.svg) with [aggregate source data](assets/sustained-comparison.json). Its data records the original audit SHA-256 and run IDs. Rebuild into a fresh directory with the pinned Matplotlib script:
+
+```sh
+uv run --script scripts/plot_sustained_comparison.py --audit "$FINSERVE_AUDIT_JSON" --output "$FINSERVE_NEW_FIGURE_DIRECTORY"
+```
+
+The plot consumes the recomputed audit; it does not replace raw-record verification.
+
 ## Rejected speculation experiment
 
 At concurrency 16, short 256-request development runs measured 40.29 requests/s without speculation versus 20.59 with three-token n-gram proposals. Candidate acceptance was 30.04% across its two recordings including warmup. p95 rose from 0.533 to 1.387 seconds. The unchanged correctness suite failed. The preferred profile keeps speculation disabled; the failed records are retained in `ngram-load-c16-01` and `quality-ngram-01`.
