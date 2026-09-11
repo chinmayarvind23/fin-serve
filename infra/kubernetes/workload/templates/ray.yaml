@@ -16,8 +16,21 @@ spec:
           mode: least_load
   rayClusterConfig:
     rayVersion: {{ .Values.ray.version | quote }}
-    # Static capacity keeps node, pod and Serve scaling loops independently reviewable.
-    enableInTreeAutoscaling: false
+    # Ray resource demand controls CPU worker Pods; engine/Serve replicas remain fixed.
+    enableInTreeAutoscaling: {{ .Values.ray.autoscaling.enabled }}
+    {{- if .Values.ray.autoscaling.enabled }}
+    autoscalerOptions:
+      version: v2
+      upscalingMode: Conservative
+      idleTimeoutSeconds: {{ .Values.ray.autoscaling.idleTimeoutSeconds }}
+      # Include the sidecar in the two-node staging CPU budget.
+      resources:
+        requests: {cpu: 100m, memory: 512Mi}
+        limits: {cpu: 500m, memory: 512Mi}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+    {{- end }}
     headGroupSpec:
       serviceType: ClusterIP
       rayStartParams: {num-cpus: "0", num-gpus: "0", dashboard-host: "0.0.0.0"}
@@ -25,7 +38,10 @@ spec:
         metadata:
           labels: {finserve.io/component: ray}
         spec:
+          {{- if not .Values.ray.autoscaling.enabled }}
           serviceAccountName: {{ .Release.Name }}-runtime
+          {{- end }}
+          # With autoscaling, KubeRay creates a dedicated head account and scoped RBAC.
           nodeSelector: {finserve.io/pool: cpu}
           terminationGracePeriodSeconds: 120
           securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
@@ -63,8 +79,8 @@ spec:
                 {{- end }}
     workerGroupSpecs:
       - groupName: cpu-proxies
-        replicas: {{ .Values.ray.workers }}
-        minReplicas: {{ .Values.ray.workers }}
+        replicas: {{ ternary 1 (.Values.ray.workers | int) .Values.ray.autoscaling.enabled }}
+        minReplicas: {{ ternary 1 (.Values.ray.workers | int) .Values.ray.autoscaling.enabled }}
         maxReplicas: {{ .Values.ray.workers }}
         rayStartParams: {num-cpus: "1", num-gpus: "0"}
         template:

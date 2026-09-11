@@ -148,7 +148,10 @@ def test_install_values_fail_closed(tmp_path: Path, invalid: str) -> None:
 
 
 @pytest.mark.parametrize("with_gateway", [False, True])
-def test_rayservice_matches_actual_pinned_operator_crd(tmp_path: Path, with_gateway: bool) -> None:
+@pytest.mark.parametrize("autoscaling", [False, True])
+def test_rayservice_matches_actual_pinned_operator_crd(
+    tmp_path: Path, with_gateway: bool, autoscaling: bool
+) -> None:
     """Use the downloaded operator's real OpenAPI schema, rather than a hand-maintained mock."""
     yaml = pytest.importorskip("yaml")
     jsonschema = pytest.importorskip("jsonschema")
@@ -169,12 +172,71 @@ def test_rayservice_matches_actual_pinned_operator_crd(tmp_path: Path, with_gate
     schema = next(item for item in definition["spec"]["versions"] if item["name"] == "v1")[
         "schema"
     ]["openAPIV3Schema"]
-    rendered = render(tmp_path, gateway_values() if with_gateway else fixture_values())
+    values = gateway_values() if with_gateway else fixture_values()
+    values["ray"]["autoscaling"] = {"enabled": autoscaling}
+    rendered = render(tmp_path, values)
     assert rendered.returncode == 0, rendered.stderr
     resource = next(
         item for item in yaml.safe_load_all(rendered.stdout) if item["kind"] == "RayService"
     )
     jsonschema.Draft4Validator(schema).validate(resource)
+
+
+def test_cpu_autoscaling_keeps_engine_capacity_and_worker_permissions_fixed(tmp_path: Path) -> None:
+    """The sidecar fits the CPU budget and gets its own head identity, never engine credentials."""
+    yaml = pytest.importorskip("yaml")
+    values = gateway_values()
+    values["ray"]["autoscaling"] = {"enabled": True, "idleTimeoutSeconds": 120}
+    result = render(tmp_path, values)
+    assert result.returncode == 0, result.stderr
+    documents = list(yaml.safe_load_all(result.stdout))
+    ray = next(item for item in documents if item["kind"] == "RayService")
+    cluster = ray["spec"]["rayClusterConfig"]
+    assert cluster["enableInTreeAutoscaling"] is True
+    options = cluster["autoscalerOptions"]
+    assert options["version"] == "v2" and options["upscalingMode"] == "Conservative"
+    assert options["idleTimeoutSeconds"] == 120
+    assert options["resources"]["requests"] == {"cpu": "100m", "memory": "512Mi"}
+    assert "env" not in options and "image" not in options
+    head = cluster["headGroupSpec"]["template"]["spec"]
+    assert "serviceAccountName" not in head  # Operator creates a cluster-specific head account.
+    worker = cluster["workerGroupSpecs"][0]
+    assert (worker["replicas"], worker["minReplicas"], worker["maxReplicas"]) == (1, 1, 2)
+    assert worker["template"]["spec"]["serviceAccountName"] == "fixture-runtime"
+    account = next(
+        item
+        for item in documents
+        if item["kind"] == "ServiceAccount" and item["metadata"]["name"] == "fixture-runtime"
+    )
+    assert account["automountServiceAccountToken"] is False
+    assert 500 + 100 + 1000 <= 1900 - 300
+    engine = next(
+        item
+        for item in documents
+        if item["kind"] == "Deployment" and item["metadata"]["name"] == "fixture-engine"
+    )
+    assert engine["spec"]["replicas"] == 1
+    app = yaml.safe_load(ray["spec"]["serveConfigV2"])["applications"][0]
+    assert app["args"]["backends"] == {"engine-a": "http://fixture-engine:8000/v1"}
+    assert app["args"]["capacity_per_worker"] == 16
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"enabled": "true"},
+        {"idleTimeoutSeconds": 0},
+        {"idleTimeoutSeconds": 601},
+        {"maxWorkers": 100},
+        {"image": "unreviewed:latest"},
+    ],
+)
+def test_autoscaling_rejects_unsafe_overrides(tmp_path: Path, override: dict[str, Any]) -> None:
+    """Scaling cannot bypass the reviewed resource, image or worker bounds through extra values."""
+    values = fixture_values()
+    values["ray"]["autoscaling"] = override
+    result = render(tmp_path, values)
+    assert result.returncode != 0 and "schema" in result.stderr
 
 
 def gateway_values() -> dict[str, Any]:

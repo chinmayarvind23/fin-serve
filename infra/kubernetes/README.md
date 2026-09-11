@@ -101,6 +101,39 @@ but actual allocatable resources and system Pods must be checked before installa
 One CPU proxy actor addresses the one engine; two worker Pods do not imply two model
 replicas or additional GPU throughput.
 
+Set `ray.autoscaling.enabled=true` to enable the KubeRay V2 autoscaler for CPU
+worker Pods. The group starts at one worker, with a minimum of one and maximum of
+two per RayCluster. `ray.autoscaling.idleTimeoutSeconds` defaults to 60 and accepts
+60–600 seconds. The default remains two fixed workers. Unknown autoscaling fields
+are rejected, so this switch cannot substitute an unreviewed image or expand the
+worker budget. The autoscaler uses the same pinned image as the Ray head.
+
+Scaling responds to Ray actor/task resource demand. The current fixed router and
+single engine proxy each request 0.1 logical CPU and fit on one worker; increased
+HTTP traffic alone does not request more actors. Active actors can prevent an
+otherwise lightly used worker from becoming idle. Engine admission capacity,
+engine replicas and EKS node-group sizes are unchanged. GPU and node autoscaling
+still require implementation and live verification.
+
+The sidecar requests 100m CPU and 512Mi memory, with limits of 500m and 512Mi.
+Head, sidecar and one worker request 1600m CPU, the declared per-node staging
+allowance after 300m of system requests. Check actual node resources and other
+Pods before installation. The two-worker bound applies per RayCluster; old and
+new clusters can overlap during RayService upgrades and exceed this steady-state
+budget. This configuration does not establish upgrade headroom.
+
+When enabled, the head omits the shared runtime account so KubeRay creates its
+own cluster-named ServiceAccount and namespaced Role/RoleBinding. The generated
+permissions cover Pods and RayClusters across the namespace, and both head
+containers share the token. Worker and engine Pods keep the separate tokenless
+runtime account. Use the dedicated `finserve` namespace; enabling this switch does
+not give workers or engines Kubernetes API credentials.
+
+These choices follow [KubeRay autoscaling configuration](https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/configuring-autoscaling.html)
+and the [pinned 1.6.1 operator implementation](https://github.com/ray-project/kuberay/blob/v1.6.1/ray-operator/controllers/ray/common/pod.go).
+Helm and CRD checks validate configuration only. No observed scale-up, drain,
+scale-down or capacity improvement is claimed before a live cluster exercise.
+
 The engine uses a Recreate rollout because one GPU cannot accommodate a surge Pod.
 Updates interrupt service. Separate candidate and known-good capacity is required
 before claiming canary promotion or fast rollback. Ray process probes and engine

@@ -5,6 +5,10 @@ ray:
   importPath: finserve.engines.ray_backends:build_application
   capacityPerWorker: 16
   workers: 2
+  # CPU Ray resource demand only; one fixed router/proxy pair does not scale with HTTP load.
+  autoscaling:
+    enabled: false
+    idleTimeoutSeconds: 60
 engine:
   image: ""
   # Existing PVC root contains the exact verified snapshot; startup rehashes every file.

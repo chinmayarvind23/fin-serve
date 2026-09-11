@@ -5,13 +5,23 @@
   "properties": {
     "ray": {
       "type": "object",
-      "required": ["image", "version", "importPath", "capacityPerWorker", "workers"],
+      "required": ["image", "version", "importPath", "capacityPerWorker", "workers", "autoscaling"],
+      "additionalProperties": false,
       "properties": {
         "image": {"type": "string", "pattern": "^[^ ]+@sha256:[a-f0-9]{64}$"},
         "version": {"const": "2.58.0"},
         "importPath": {"const": "finserve.engines.ray_backends:build_application"},
         "capacityPerWorker": {"type": "integer", "minimum": 1, "maximum": 64},
-        "workers": {"const": 2}
+        "workers": {"const": 2},
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "idleTimeoutSeconds"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "idleTimeoutSeconds": {"type": "integer", "minimum": 60, "maximum": 600}
+          }
+        }
       }
     },
     "engine": {
