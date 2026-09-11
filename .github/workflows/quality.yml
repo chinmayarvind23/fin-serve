@@ -44,7 +44,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP"
           echo "FINSERVE_HELM=$RUNNER_TEMP/linux-amd64/helm" >> "$GITHUB_ENV"
       - name: Resolve pinned operator charts
-        run: '"$FINSERVE_HELM" dependency build infra/kubernetes/operators'
+        run: |
+          "$FINSERVE_HELM" repo add kuberay https://ray-project.github.io/kuberay-helm/
+          "$FINSERVE_HELM" repo add nvidia https://nvidia.github.io/k8s-device-plugin
+          "$FINSERVE_HELM" dependency build infra/kubernetes/operators
       - name: Validate actual Helm output and RayService schema
         run: >-
           uv run --isolated --no-project --with pytest --with pytest-asyncio --with pyyaml --with jsonschema

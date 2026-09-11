@@ -6,6 +6,8 @@ do not install NVIDIA DRA on the same nodes. Use the AL2023 NVIDIA AMI selected 
 foundation and confirm device allocation before serving.
 
 ```sh
+helm repo add kuberay https://ray-project.github.io/kuberay-helm/
+helm repo add nvidia https://nvidia.github.io/k8s-device-plugin
 helm dependency build infra/kubernetes/operators
 helm lint infra/kubernetes/operators --namespace finserve-operators
 helm template finserve-operators infra/kubernetes/operators --namespace finserve-operators --include-crds
