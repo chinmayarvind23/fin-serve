@@ -1,0 +1,390 @@
+{
+  "suite_id": "original-synthetic-text-release-v1",
+  "version": 1,
+  "items": [
+    {
+      "case_id": "sec_qa_00",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 0 reported revenue 500 and operating income 100. Division 0 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_00",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 0, revenue 500, capex 20. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_00",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 0 reported revenue of 500. Costs increased by 1 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_00",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 100 books and adds 10. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_01",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 1 reported revenue 525 and operating income 105. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_01",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 1, revenue 525, capex 21. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_01",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 1 reported revenue of 525. Costs increased by 2 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_01",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 101 books and adds 11. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_02",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 2 reported revenue 550 and operating income 110. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_02",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 2, revenue 550, capex 22. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_02",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 2 reported revenue of 550. Costs increased by 3 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_02",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 102 books and adds 12. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_03",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 3 reported revenue 575 and operating income 115. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_03",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 3, revenue 575, capex 23. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_03",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 3 reported revenue of 575. Costs increased by 4 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_03",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 103 books and adds 13. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_04",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 4 reported revenue 600 and operating income 120. Division 0 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_04",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 4, revenue 600, capex 24. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_04",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 4 reported revenue of 600. Costs increased by 5 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_04",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 104 books and adds 14. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_05",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 5 reported revenue 625 and operating income 125. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_05",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 5, revenue 625, capex 25. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_05",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 5 reported revenue of 625. Costs increased by 6 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_05",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 105 books and adds 15. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_06",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 6 reported revenue 650 and operating income 130. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_06",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 6, revenue 650, capex 26. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_06",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 6 reported revenue of 650. Costs increased by 7 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_06",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 106 books and adds 16. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_07",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 7 reported revenue 675 and operating income 135. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_07",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 7, revenue 675, capex 27. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_07",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 7 reported revenue of 675. Costs increased by 8 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_07",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 107 books and adds 17. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_08",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 8 reported revenue 700 and operating income 140. Division 0 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_08",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 8, revenue 700, capex 28. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_08",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 8 reported revenue of 700. Costs increased by 9 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_08",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 108 books and adds 18. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_09",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 9 reported revenue 725 and operating income 145. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_09",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 9, revenue 725, capex 29. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_09",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 9 reported revenue of 725. Costs increased by 10 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_09",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 109 books and adds 19. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_10",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 10 reported revenue 750 and operating income 150. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_10",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 10, revenue 750, capex 30. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_10",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 10 reported revenue of 750. Costs increased by 11 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_10",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 110 books and adds 20. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_11",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 11 reported revenue 775 and operating income 155. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_11",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 11, revenue 775, capex 31. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_11",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 11 reported revenue of 775. Costs increased by 12 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_11",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 111 books and adds 21. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_12",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 12 reported revenue 800 and operating income 160. Division 0 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_12",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 12, revenue 800, capex 32. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_12",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 12 reported revenue of 800. Costs increased by 13 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_12",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 112 books and adds 22. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_13",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 13 reported revenue 825 and operating income 165. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_13",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 13, revenue 825, capex 33. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_13",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 13 reported revenue of 825. Costs increased by 14 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_13",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 113 books and adds 23. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_14",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 14 reported revenue 850 and operating income 170. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_14",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 14, revenue 850, capex 34. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_14",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 14 reported revenue of 850. Costs increased by 15 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_14",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 114 books and adds 24. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    },
+    {
+      "case_id": "sec_qa_15",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExample 15 reported revenue 875 and operating income 175. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Compute the operating margin. Explain in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "SEC_QA"
+    },
+    {
+      "case_id": "financial_table_extraction_15",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nExtract these facts as JSON only: company Example 15, revenue 875, capex 35. Use keys company, revenue, capex.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 48,
+      "family": "FINANCIAL_TABLE_EXTRACTION"
+    },
+    {
+      "case_id": "earnings_summary_15",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nSummarize the following in four sentences: Example 15 reported revenue of 875. Costs increased by 16 percent. Guidance remained unchanged. Division 0 reported stable customer retention and no acquisitions. Division 1 reported stable customer retention and no acquisitions. Division 2 reported stable customer retention and no acquisitions. Division 3 reported stable customer retention and no acquisitions. Division 4 reported stable customer retention and no acquisitions. Division 5 reported stable customer retention and no acquisitions. Division 6 reported stable customer retention and no acquisitions. Division 7 reported stable customer retention and no acquisitions. Division 8 reported stable customer retention and no acquisitions. Division 9 reported stable customer retention and no acquisitions. Division 10 reported stable customer retention and no acquisitions. Division 11 reported stable customer retention and no acquisitions. Division 12 reported stable customer retention and no acquisitions. Division 13 reported stable customer retention and no acquisitions. Division 14 reported stable customer retention and no acquisitions. Division 15 reported stable customer retention and no acquisitions. Division 16 reported stable customer retention and no acquisitions. Division 17 reported stable customer retention and no acquisitions. Division 18 reported stable customer retention and no acquisitions. Division 19 reported stable customer retention and no acquisitions. Division 20 reported stable customer retention and no acquisitions. Division 21 reported stable customer retention and no acquisitions. Division 22 reported stable customer retention and no acquisitions. Division 23 reported stable customer retention and no acquisitions. Division 24 reported stable customer retention and no acquisitions. Do not add unsupported claims.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 96,
+      "family": "EARNINGS_SUMMARY"
+    },
+    {
+      "case_id": "general_15",
+      "prompt": "<|im_start|>system\nYou are a careful assistant. Use only the provided facts.<|im_end|>\n<|im_start|>user\nA library has 115 books and adds 25. Explain how to calculate the new total, then give the total in one sentence.<|im_end|>\n<|im_start|>assistant\n",
+      "max_tokens": 32,
+      "family": "GENERAL"
+    }
+  ]
+}
