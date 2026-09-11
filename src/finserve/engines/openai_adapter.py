@@ -168,6 +168,7 @@ class OpenAICompletionEngine:
         if maximum_response_bytes < 1:
             raise ValueError("Engine response byte limit must be positive")
         self._url = str(url).rstrip("/") + "/completions"
+        self._chat_url = str(url).rstrip("/") + "/chat/completions"
         self._maximum_response_bytes = maximum_response_bytes
         headers = {"accept": "text/event-stream", "accept-encoding": "identity"}
         if api_key:
@@ -181,31 +182,39 @@ class OpenAICompletionEngine:
         )
 
     async def stream(self, request: InferenceRequest) -> AsyncGenerator[EngineToken, None]:
-        """Forward raw prompts without a hidden chat-template change or retry.
+        """Preserve raw completion prompts or send original chat roles through the backend template.
 
         Visible deltas carry zero counts; the final empty event carries the authoritative
         total. Deadlines cover pool wait, headers, and every frame. Generator closure or
         cancellation exits the HTTP stream context and releases its pooled connection.
         """
-        payload = {
+        payload: dict[str, object] = {
             "model": request.model,
-            "prompt": request.prompt,
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
             "stream": True,
             "n": 1,
             "stream_options": {"include_usage": True},
         }
+        state: CompletionState
+        if request.messages is None:
+            payload["prompt"] = request.prompt
+            url, state = self._url, CompletionState(maximum_tokens=request.max_tokens)
+        else:
+            # The shared parser depends only on completion accounting, never vision/Pillow/JAX.
+            from finserve.engines.chat_protocol import ChatState
+
+            payload["messages"] = [message.model_dump() for message in request.messages]
+            url, state = self._chat_url, ChatState(maximum_tokens=request.max_tokens)
         deadline = asyncio.get_running_loop().time() + request.timeout_seconds
         outbound = self._client.build_request(
-            "POST", self._url, json=payload, timeout=request.timeout_seconds
+            "POST", url, json=payload, timeout=request.timeout_seconds
         )
         try:
             async with asyncio.timeout_at(deadline):
                 response = await self._client.send(outbound, stream=True)
             try:
                 self._validate_response(response)
-                state = CompletionState(maximum_tokens=request.max_tokens)
                 events = sse_events(response, self._maximum_response_bytes)
                 while True:
                     if asyncio.get_running_loop().time() >= deadline:

@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from finserve.contracts.inference import EngineToken
 from finserve.contracts.vision import VisionRequest
+from finserve.engines.chat_protocol import ChatState as ChatState
 from finserve.engines.openai_adapter import (
-    CompletionState,
-    CompletionUsage,
     EngineProtocolError,
     EngineUnavailableError,
     sse_events,
@@ -35,55 +31,6 @@ class VisionEngine(Protocol):
     async def close(self) -> None:
         """Release owned transport after active request owners have drained."""
         ...
-
-
-class ChatDelta(BaseModel):
-    """Accept normal assistant role/content deltas; tool and reasoning protocols are separate."""
-
-    model_config = ConfigDict(extra="ignore", strict=True)
-    role: Literal["assistant"] | None = None
-    content: str | None = None
-    tool_calls: None = None
-    function_call: None = None
-    refusal: None = None
-
-
-class ChatChoice(BaseModel):
-    """Only one generation is budgeted, and every finish reason must have defined semantics."""
-
-    model_config = ConfigDict(extra="ignore", strict=True)
-    index: Literal[0]
-    delta: ChatDelta
-    finish_reason: Literal["stop", "length"] | None = None
-
-
-class ChatFrame(BaseModel):
-    """The final usage-only frame is distinct from assistant text deltas."""
-
-    model_config = ConfigDict(extra="ignore", strict=True)
-    choices: list[ChatChoice] = Field(max_length=1)
-    usage: CompletionUsage | None = None
-
-
-@dataclass
-class ChatState(CompletionState):
-    """Reuse accounting invariants while parsing the actual chat delta wire shape."""
-
-    def consume(self, data: str) -> str:
-        """Translate validated chat fields to the shared count state without guessing tokens."""
-        try:
-            frame = ChatFrame.model_validate(json.loads(data, object_pairs_hook=unique_object))
-        except (ValidationError, ValueError):
-            raise EngineProtocolError("Engine returned an invalid chat event") from None
-        choices = [
-            {"index": 0, "text": choice.delta.content or "", "finish_reason": choice.finish_reason}
-            for choice in frame.choices
-        ]
-        # Shared state enforces finish-before-usage, total bounds and no data after usage.
-        from finserve.engines.openai_adapter import CompletionFrame
-
-        translated = CompletionFrame.model_validate({"choices": choices, "usage": frame.usage})
-        return super().consume(translated.model_dump_json())
 
 
 class OpenAIVisionEngine:
@@ -190,13 +137,3 @@ def validate_chat_response(response: httpx.Response) -> None:
         raise EngineProtocolError("Vision engine response is not SSE")
     if response.headers.get("content-encoding", "identity").lower() != "identity":
         raise EngineProtocolError("Vision SSE compression is unsupported")
-
-
-def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    """Ambiguous duplicate JSON fields cannot decide final usage or change media semantics."""
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate JSON key")
-        result[key] = value
-    return result
