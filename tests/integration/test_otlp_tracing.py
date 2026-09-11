@@ -35,6 +35,7 @@ def isolated_trace_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "FINSERVE_OTLP_AUTHORIZATION",
         "FINSERVE_TRACE_SAMPLE_RATIO",
         "FINSERVE_OTLP_TIMEOUT_SECONDS",
+        "FINSERVE_OTLP_PROTOCOL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -55,6 +56,43 @@ class Collector:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.url = ""
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"",
+        b"{}",
+        b"[]",
+        b'{"name":"otel-ingestion-job"}',
+        b'{"id":"1","id":"2","name":"otel-ingestion-job","data":{}}',
+        b'{"id":"1","name":"otel-ingestion-job","data":{"name":"otel-ingestion-job"},"partialSuccess":{"rejectedSpans":1}}',
+    ],
+    ids=["empty", "empty-object", "array", "missing-job", "duplicate", "partial-rejection"],
+)
+async def test_langfuse_ack_rejects_ambiguous_success(
+    collector: "Collector",
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    body: bytes,
+) -> None:
+    """Langfuse's explicit protocol cannot turn an arbitrary JSON HTTP200 into acceptance."""
+    pytest.importorskip("opentelemetry.exporter.otlp.proto.http.trace_exporter")
+    collector.body = body
+    monkeypatch.setenv("FINSERVE_OTLP_ENDPOINT", collector.url)
+    monkeypatch.setenv("FINSERVE_OTLP_PROTOCOL", "langfuse-v4")
+    monkeypatch.setenv("FINSERVE_OTLP_TIMEOUT_SECONDS", "0.1")
+    runtime = from_env()
+    assert runtime is not None
+    try:
+        assert (
+            await asyncio.to_thread(runtime.exporter.export, [unsafe_span()])
+            is SpanExportResult.FAILURE
+        )
+        assert runtime.exporter.failures == 1
+    finally:
+        await asyncio.to_thread(runtime.close)
+    assert "rejectedSpans" not in caplog.text
 
 
 @pytest.fixture
@@ -141,13 +179,22 @@ def unsafe_span() -> ReadableSpan:
     )
 
 
+@pytest.mark.parametrize("protocol", ["otlp", "langfuse-v4"])
 async def test_real_otlp_payload_privacy(
-    collector: Collector, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    collector: Collector,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    protocol: str,
 ) -> None:
     """A real protobuf collector receives causal IDs/counts but no prompts or ambient metadata."""
     pytest.importorskip("opentelemetry.exporter.otlp.proto.http.trace_exporter")
     protobuf = pytest.importorskip("opentelemetry.proto.collector.trace.v1.trace_service_pb2")
     monkeypatch.setenv("FINSERVE_OTLP_ENDPOINT", collector.url)
+    monkeypatch.setenv("FINSERVE_OTLP_PROTOCOL", protocol)
+    if protocol == "langfuse-v4":
+        collector.body = json.dumps(
+            {"id": "1", "name": "otel-ingestion-job", "data": {"name": "otel-ingestion-job"}}
+        ).encode()
     monkeypatch.setenv("FINSERVE_OTLP_AUTHORIZATION", "Bearer synthetic-secret")
     monkeypatch.setenv("FINSERVE_TRACE_SAMPLE_RATIO", "1")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "private=ambient-secret")
@@ -168,6 +215,9 @@ async def test_real_otlp_payload_privacy(
     assert path == "/v1/traces"
     assert headers["Authorization"] == "Bearer synthetic-secret"
     assert headers["Accept-Encoding"] == "identity"
+    assert headers.get("x-langfuse-ingestion-version") == (
+        "4" if protocol == "langfuse-v4" else None
+    )
     assert "private" not in headers
     assert b"private" not in payload and b"secret" not in payload
     decoded = protobuf.ExportTraceServiceRequest.FromString(payload)
@@ -317,6 +367,7 @@ def test_no_config_and_unique_component_files(
         ("FINSERVE_TRACE_SAMPLE_RATIO", "secret"),
         ("FINSERVE_OTLP_AUTHORIZATION", "Bearer secret\r\nInjected: x"),
         ("FINSERVE_OTLP_AUTHORIZATION", ""),
+        ("FINSERVE_OTLP_PROTOCOL", "private-secret"),
     ],
     ids=[
         "public-http",
@@ -332,6 +383,7 @@ def test_no_config_and_unique_component_files(
         "bad-sample",
         "header-injection",
         "empty-auth",
+        "bad-protocol",
     ],
 )
 def test_bad_config_has_static_errors(

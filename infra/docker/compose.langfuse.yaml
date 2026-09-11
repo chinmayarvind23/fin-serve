@@ -1,0 +1,167 @@
+# Separate local verification project; do not combine with the base FinServe compose file.
+# Upstream Langfuse 4.33.0, source 81bbfd169b72ea2ed53639699cc6632e8f908ce8.
+name: finserve-langfuse-local
+x-common: &common
+  restart: "no"
+  security_opt: ["no-new-privileges:true"]
+  networks: [langfuse]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "2"}
+x-dependencies: &dependencies
+  postgres: {condition: service_healthy}
+  clickhouse: {condition: service_healthy}
+  redis: {condition: service_healthy}
+  minio: {condition: service_healthy}
+x-environment: &environment
+  DATABASE_URL: postgresql://langfuse:${LF_POSTGRES_PASSWORD:?external generated secret required}@postgres:5432/langfuse
+  NEXTAUTH_URL: http://localhost:3037
+  SALT: ${LF_SALT:?external generated secret required}
+  ENCRYPTION_KEY: ${LF_ENCRYPTION_KEY:?external generated secret required}
+  TELEMETRY_ENABLED: "false"
+  NEXT_TELEMETRY_DISABLED: "1"
+  LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+  LANGFUSE_IN_APP_AGENT_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: langfuse
+  CLICKHOUSE_PASSWORD: ${LF_CLICKHOUSE_PASSWORD:?external generated secret required}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${LF_REDIS_PASSWORD:?external generated secret required}
+  REDIS_TLS_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LF_MINIO_PASSWORD:?external generated secret required}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LF_MINIO_PASSWORD}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+  LANGFUSE_INGESTION_QUEUE_DELAY_MS: "100"
+  LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: "500"
+  NODE_OPTIONS: --max-old-space-size=1024
+services:
+  web:
+    <<: *common
+    # Docker Desktop does not publish ports on an internal-only network.
+    networks: [langfuse, ingress]
+    image: docker.langfuse.com/langfuse/langfuse:4.33.0@sha256:1e2bb860753bb61978e68270d70f194b204dc15c4278c1bb95ce904bc4e60123
+    depends_on: *dependencies
+    ports: ["127.0.0.1:3037:3000"]
+    cpus: 1.5
+    mem_limit: 1536m
+    pids_limit: 256
+    environment:
+      <<: *environment
+      HOSTNAME: 0.0.0.0
+      NEXTAUTH_SECRET: ${LF_NEXTAUTH_SECRET:?external generated secret required}
+      AUTH_DISABLE_SIGNUP: "true"
+      LANGFUSE_INIT_ORG_ID: finserve-local-org
+      LANGFUSE_INIT_ORG_NAME: FinServe Local Verification
+      LANGFUSE_INIT_PROJECT_ID: finserve-local-traces
+      LANGFUSE_INIT_PROJECT_NAME: FinServe Sanitized Traces
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LF_PUBLIC_KEY:?external generated key required}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LF_SECRET_KEY:?external generated key required}
+      LANGFUSE_INIT_USER_EMAIL: finserve-local-owner@example.invalid
+      LANGFUSE_INIT_USER_NAME: Local Verification Owner
+      LANGFUSE_INIT_USER_PASSWORD: ${LF_OWNER_PASSWORD:?external generated secret required}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/public/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+  worker:
+    <<: *common
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.33.0@sha256:bc245319e36c9c9f27d8725d04c42b92d641f524e0de27af596bf34a66d5a6d5
+    depends_on: *dependencies
+    cpus: 1
+    mem_limit: 1536m
+    pids_limit: 256
+    environment: *environment
+  postgres:
+    <<: *common
+    image: postgres:17.11-alpine3.24@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_DB: langfuse
+      POSTGRES_PASSWORD: ${LF_POSTGRES_PASSWORD}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD, pg_isready, -U, langfuse, -d, langfuse]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  clickhouse:
+    <<: *common
+    image: clickhouse/clickhouse-server:25.12@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+    user: "101:101"
+    cpus: 1.5
+    mem_limit: 2048m
+    pids_limit: 512
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${LF_CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./langfuse-clickhouse.xml:/etc/clickhouse-server/config.d/finserve-local.xml:ro
+    healthcheck:
+      test: [CMD, wget, --no-verbose, --tries=1, --spider, http://localhost:8123/ping]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  redis:
+    <<: *common
+    image: redis:7.2-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
+    user: "999:999"
+    cpus: 0.25
+    mem_limit: 192m
+    pids_limit: 64
+    command: [redis-server, --requirepass, "${LF_REDIS_PASSWORD}", --maxmemory, 96mb, --maxmemory-policy, noeviction, --appendonly, "yes"]
+    environment: {REDISCLI_AUTH: "${LF_REDIS_PASSWORD}"}
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  minio:
+    <<: *common
+    image: cgr.dev/chainguard/minio:latest@sha256:039800e64ec7247d2fde7cff3697e964f6fe20b6d7d2c46aa7d82cc63355d512
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    entrypoint: sh
+    command: [-c, 'mkdir -p /data/langfuse && exec minio server --address ":9000" /data']
+    environment:
+      MINIO_ROOT_USER: langfuse
+      MINIO_ROOT_PASSWORD: ${LF_MINIO_PASSWORD}
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: [CMD, mc, ready, local]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+networks:
+  langfuse: {internal: true}
+  ingress: {}
+volumes:
+  postgres-data:
+  clickhouse-data:
+  clickhouse-logs:
+  redis-data:
+  minio-data:

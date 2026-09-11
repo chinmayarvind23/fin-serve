@@ -1,0 +1,8 @@
+<clickhouse>
+  <!-- Small local ingestion proof: keep background scheduling within this container's PID cap. -->
+  <background_schedule_pool_size>16</background_schedule_pool_size>
+  <background_buffer_flush_schedule_pool_size>4</background_buffer_flush_schedule_pool_size>
+  <background_message_broker_schedule_pool_size>4</background_message_broker_schedule_pool_size>
+  <background_distributed_schedule_pool_size>4</background_distributed_schedule_pool_size>
+  <max_server_memory_usage>1500000000</max_server_memory_usage>
+</clickhouse>

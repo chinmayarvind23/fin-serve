@@ -8,7 +8,7 @@ import time
 from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -18,6 +18,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, Spa
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 from opentelemetry.trace import SpanContext, Status, Tracer, TraceState
+
+from finserve.evaluation.quality import unique_object
 
 _COMPONENTS = frozenset({"gateway", "route", "engine"})
 _NAMES = frozenset({"finserve.inference", "finserve.route", "finserve.engine"})
@@ -91,7 +93,9 @@ class SanitizingSpanExporter(SpanExporter):
             self.failures += 1
 
 
-def _otlp_exporter(endpoint: str, authorization: str | None, timeout: float) -> SpanExporter:
+def _otlp_exporter(
+    endpoint: str, authorization: str | None, timeout: float, *, langfuse_v4: bool = False
+) -> SpanExporter:
     """Use the official protobuf exporter with an explicitly constrained HTTP transport."""
     try:
         import requests
@@ -104,7 +108,7 @@ def _otlp_exporter(endpoint: str, authorization: str | None, timeout: float) -> 
         raise RuntimeError("OTLP tracing requires the telemetry optional dependency") from None
 
     def acknowledged(response: requests.Response, deadline: float) -> bool:
-        """Bound protobuf replies and detect rejected spans without exporting error text."""
+        """Bound replies; Langfuse v4 returns its queue job while standard OTLP returns protobuf."""
         if response.headers.get("Content-Encoding", "identity") != "identity":
             raise ValueError("encoded collector response")
         declared = response.headers.get("Content-Length")
@@ -123,6 +127,22 @@ def _otlp_exporter(endpoint: str, authorization: str | None, timeout: float) -> 
                 raise ValueError("collector response too large")
             if not chunk:
                 break
+        if langfuse_v4:
+            # Pinned Langfuse 4.33.0 returns a BullMQ job, not an OTLP response message.
+            raw_job = json.loads(bytes(body), object_pairs_hook=unique_object)
+            if not isinstance(raw_job, dict):
+                return False
+            job = cast(dict[str, Any], raw_job)
+            return (
+                job.get("name") == "otel-ingestion-job"
+                and isinstance(job.get("id"), str)
+                and 0 < len(job["id"]) <= 128
+                and isinstance(job.get("data"), dict)
+                and job["data"].get("name") == "otel-ingestion-job"
+                and "error" not in job
+                and "partialSuccess" not in job
+                and "partial_success" not in job
+            )
         acknowledgement = ExportTraceServiceResponse.FromString(bytes(body))
         return acknowledgement.partial_success.rejected_spans == 0
 
@@ -165,6 +185,8 @@ def _otlp_exporter(endpoint: str, authorization: str | None, timeout: float) -> 
     session = CollectorSession()
     session.trust_env = False
     headers = {"Content-Type": "application/x-protobuf", "Accept-Encoding": "identity"}
+    if langfuse_v4:
+        headers["x-langfuse-ingestion-version"] = "4"
     if authorization:
         headers["Authorization"] = authorization
     try:
@@ -216,6 +238,9 @@ def from_env(*, component: str = "gateway") -> "TraceRuntime | None":
         return None
     if path and endpoint:
         raise ValueError("Configure exactly one tracing output")
+    protocol = os.getenv("FINSERVE_OTLP_PROTOCOL", "otlp")
+    if protocol not in {"otlp", "langfuse-v4"}:
+        raise ValueError("Invalid OTLP protocol")
     try:
         ratio = float(os.getenv("FINSERVE_TRACE_SAMPLE_RATIO", "0.01"))
         timeout = float(os.getenv("FINSERVE_OTLP_TIMEOUT_SECONDS", "3"))
@@ -232,7 +257,9 @@ def from_env(*, component: str = "gateway") -> "TraceRuntime | None":
             or any(not 32 <= ord(character) <= 126 for character in authorization)
         ):
             raise ValueError("Invalid OTLP authorization")
-        exporter = _otlp_exporter(_endpoint(endpoint), authorization, timeout)
+        exporter = _otlp_exporter(
+            _endpoint(endpoint), authorization, timeout, langfuse_v4=protocol == "langfuse-v4"
+        )
     else:
         output = Path(path or "")
         if component != "gateway":
