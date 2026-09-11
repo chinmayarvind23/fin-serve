@@ -1,9 +1,9 @@
-# ADR 007 rds s3 mlflow state split
+# ADR007: durable metadata, immutable artifacts and an optional MLflow mirror
 
-## Decision
+Status: implemented locally; managed cloud deployment pending.
 
-RDS owns structured truth, S3 large artifacts, MLflow experiment/eval evidence; Redis is not durable truth.
+The SQLAlchemy registry owns immutable evidence identities and lifecycle events. SQLite is the tested backend; PostgreSQL/RDS is the deployment target. Local SHA256-addressed artifacts are verified on read. The S3 implementation has boto3 SDK request tests, with no live-cloud execution claim.
 
-## Evidence
+MLflow mirrors metrics and decisions after checking their run binding; it cannot approve deployment. Redis remains ephemeral. Rollback controller state and the warm route use separate SQLite stores because approval, external activation and recovery are different observations.
 
-Validate the decision with the benchmark, eval, telemetry, or failure test appropriate to the component.
+This split permits evidence replay without trusting mutable experiment labels. It requires explicit reconciliation across stores and a trusted deployment integration. Tests cover immutable conflicts, raw artifact tampering, retry state, decision/run binding and local MLflow. [Data and registry](../data-and-registry.md) lists the actual records and limits.

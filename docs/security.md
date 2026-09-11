@@ -1,41 +1,27 @@
-# Security
+﻿# Security boundaries
 
-FinServe is not primarily an autonomous agent, but transferable production principles apply: typed contracts, least privilege, external enforcement, state reliability, observability, and governance.
+FinServe currently uses separately configured service credentials and trusted operator processes. It does not implement the previously proposed five-role RBAC system. The public inference API and read-only explorer cannot invoke deployment operations; the release CLI/Airflow worker and its configured adapter hold that authority.
 
-## Roles
+## Requests and ownership
 
-`inference_client`, `benchmark_operator`, `model_operator`, `deployment_operator`, `admin`.
+Bearer authentication protects configured text serving and is required for image/job capabilities. The local transport fixture can run without a key on loopback. External deployment requires authenticated TLS ingress. Request/body/output bounds, separate admission pools and deadlines limit accepted work; optional Redis quotas are shared across replicas only with matching principal and quota configuration.
 
-Inference credentials cannot deploy/delete models.
+The serving adapters close HTTP streams on cancellation and retain local/proxy ownership until cleanup is acknowledged. Native thread or GPU work cannot be stopped merely by cancelling an asyncio task. Closing an engine HTTP socket is not proof that every external GPU kernel has stopped; kernel/process drain needs runtime evidence.
 
-## Model supply chain
+## Model and artifact inputs
 
-Allowlisted source, pinned revision, checksum, license record, safe archive scan, explicit review for remote model code, immutable artifact record.
+The model producer uses fixed Hub commits, bounded file lists and source checksums. It records raw file SHA256 values and rechecks the mounted snapshot before engine startup. The runtime builder extracts a bounded exact Git archive, rejects links/path aliases and records actual image identities. Engine parameters are typed; arbitrary remote-code or destination overrides are excluded.
 
-## Container supply chain
+Local model/artifact volumes belong to trusted operators. Static path checks do not protect against a malicious process replacing those files concurrently. CAS reads verify namespace, length and digest. Invalid evidence, a missing canonical profile or failed quality blocks promotion.
 
-Pinned bases, dependency scan, SBOM, image digest, non-root where compatible, managed secrets, no cloud credentials in images.
+## Configuration and deployment
 
-## Input controls
+Credentials remain in private process configuration, not images, manifests or browser bundles. Browser access uses a separate web credential retained only in memory. Pinned bases/lockfiles and non-root runtime configuration improve reproducibility; they are not evidence that vulnerability scans or SBOM generation ran.
 
-Max bytes/context/image size/output tokens/concurrency/timeouts prevent trivial resource exhaustion.
+Terraform and Helm define private data services, scoped workload identities, resource limits and NetworkPolicies. Those configurations have local validation evidence. Their enforcement, application secret provisioning, TLS and cloud service health remain unverified until deployment. The local SQLite stores do not imply a highly available production control plane.
 
-## Streaming
+## Data visibility
 
-Disconnect/cancellation must abort expensive generation.
+Operational traces retain a bounded metadata allowlist and remove prompt/event/exception content before JSONL or OTLP export. Metric labels exclude request IDs and prompts. Benchmark artifacts intentionally retain raw synthetic prompts and outputs for independent grading; they stay in the private evidence workspace. Do not confuse trace redaction with deletion of evaluation evidence.
 
-## Redis/RDS
-
-Private networking, auth/TLS where supported, TTL for ephemeral state, parameterized SQL, least-privilege DB role. RDS must not be required per token.
-
-## Kubernetes
-
-Service-account/RBAC boundaries, NetworkPolicy, pod security, resource requests/limits, managed secrets, controlled ingress.
-
-## GraphQL
-
-Auth, resolver authorization, depth/complexity limits, pagination.
-
-## Logging
-
-Redact authorization headers, provider/model tokens, sensitive prompt/media, signed URLs.
+The [threat model](threat-model.md) records limits and the [failure guide](failure-modes.md) distinguishes fail-closed control decisions from recoverable transport failures.

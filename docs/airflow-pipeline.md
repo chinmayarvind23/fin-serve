@@ -1,23 +1,35 @@
-# Airflow Model Lifecycle
+# Airflow lifecycle
 
-Airflow coordinates slow dependency-heavy work, never token requests.
+Airflow coordinates evidence work outside the request path. The implemented Airflow 3.3.0 DAG has three tasks:
 
 ```text
-verify_input_spec
- -> fetch_model
- -> checksum/license record
- -> optional optimization/quantization
- -> build runtime image
- -> push image
- -> quality eval
- -> performance smoke
- -> register candidate in MLflow
- -> infrastructure preflight
- -> deploy canary
- -> post-deploy smoke
- -> promote or rollback
+register_evidence → evaluate_gates → deploy_verified_candidate
 ```
 
-Tasks use immutable model revision, optimization hash, image digest, and deployment revision so retries are idempotent.
+`pipelines/airflow_dags/finserve_lifecycle.py` calls `registry.pipeline`. The DAG has no schedule, permits one active run, and passes only an immutable job ID between tasks. Actual local Airflow execution is tested with controlled evidence and a deployment fixture. That test does not establish a cloud rollout.
 
-Optional optimization branches can include vLLM tuning, quality-safe quantization, TensorRT-LLM comparison, speculation artifact, or JAX compile artifact. Keep only evidence-backed branches.
+## Inputs and gate
+
+The trusted worker configures `FINSERVE_PIPELINE_REQUEST`, `FINSERVE_REGISTRY_URL` and `FINSERVE_ARTIFACT_ROOT`. The request identifies existing baseline/candidate run directories, raw quality outputs, a frozen suite, immutable revisions, policy and both canonical serving profiles. Database and artifact references must retain their original namespace across retries.
+
+Registration verifies raw run evidence and persists the lifecycle specification. Canonical jobs record their required gate mode before publishing profile inputs; a missing profile after a crash cannot fall back to a legacy drill gate. Evaluation checks profile/run identities and recomputes performance and quality. Chat cohorts also bind API, system instruction and template digest between performance and quality. Rejection or invalid evidence prevents deployment.
+
+The same gate is available to a trusted CI worker:
+
+```sh
+uv run --no-sync python -m finserve.registry.release_gate --job-id JOB_ID --output /external/evidence/new-outcome.json
+```
+
+It exits 0 for approval, 2 for rejection and 3 for invalid evidence. The manual `performance-gate.yml` workflow requires a trusted Linux self-hosted runner with registry/artifact access. It does not run GPU work or deploy from pull requests. Adding the workflow is not proof of an executed CI run.
+
+## Activation and recovery
+
+Deployment loads the server-configured `FINSERVE_DEPLOYMENT_ADAPTER` factory and recomputes the gate before invoking it. Lifecycle leases, immutable request identities and adapter idempotency govern retries. Uncertain external action is reconciled through exact-revision health rather than blindly repeated. A decision supplied by an arbitrary caller is not an authorization capability.
+
+The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images, start pods or acknowledge the separate rollback controller automatically. The trusted integration must coordinate controller acknowledgment and probation. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
+
+## Producer integration still to complete
+
+Model fetch/verification and committed-source runtime build APIs now run locally. Actual image preflight, GPU measurement and canonical rejection evidence are retained. These producer steps are not yet Airflow tasks: the current DAG consumes their completed artifacts.
+
+Remaining work includes durable producer stage receipts, managed runtime startup/cleanup, frozen experiment collection, artifact-bound quality, image publication where required, controller acknowledgment, probation and rollback wiring. The 32-case release suite remains frozen. A three-case development smoke cannot substitute for it, and failed quality cannot be waived to demonstrate activation.
