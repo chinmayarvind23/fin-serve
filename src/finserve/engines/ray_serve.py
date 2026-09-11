@@ -77,6 +77,8 @@ class FixtureReplica:
 
     async def tokens(self, request: InferenceRequest) -> AsyncGenerator[EngineToken, None]:
         """Keep fixture generation replaceable while sharing the verified lease lifecycle."""
+        if request.output_constraint is not None:
+            raise ValueError("Ray fixture does not support output constraints")
         for character in (request.prompt + " ")[: request.max_tokens]:
             await asyncio.sleep(self.token_delay_seconds)
             yield EngineToken(text=character, token_id=ord(character))

@@ -236,6 +236,10 @@ class Serving:
             return error_response("UNAUTHORIZED", 401, payload.request_id)
         if payload.model != self.model:
             return error_response("MODEL_NOT_FOUND", 404, payload.request_id)
+        if payload.output_constraint is not None and not getattr(
+            self.engine, "supports_output_constraints", False
+        ):
+            return error_response("UNSUPPORTED_OUTPUT_CONSTRAINT", 422, payload.request_id)
         quota_error = await self.quota_response(
             payload.request_id, received + payload.timeout_seconds
         )
@@ -406,8 +410,10 @@ def from_env() -> FastAPI:
         engine = FixtureEngine()
     elif backend in {"vllm", "sglang"}:
         from finserve.engines.openai_adapter import OpenAICompletionEngine
+        from finserve.engines.vllm_adapter import VLLMEngine
 
-        engine = OpenAICompletionEngine(
+        adapter = VLLMEngine if backend == "vllm" else OpenAICompletionEngine
+        engine = adapter(
             os.environ["FINSERVE_ENGINE_URL"], api_key=os.getenv("FINSERVE_ENGINE_API_KEY")
         )
     elif backend == "ray-http":

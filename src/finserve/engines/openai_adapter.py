@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from finserve.contracts.inference import EngineToken, InferenceRequest
+from finserve.contracts.output_constraint import MAXIMUM_CONSTRAINED_OUTPUT_BYTES
 
 MAX_EVENT_CHARACTERS = 65536
 
@@ -140,6 +141,8 @@ class CompletionState:
 class OpenAICompletionEngine:
     """Own a reusable HTTP pool; backend processes own batching, GPU scheduling, and KV memory."""
 
+    supports_output_constraints = False
+
     def __init__(
         self,
         base_url: str,
@@ -196,7 +199,13 @@ class OpenAICompletionEngine:
             "n": 1,
             "stream_options": {"include_usage": True},
         }
+        if request.output_constraint is not None:
+            if not self.supports_output_constraints:
+                raise ValueError("Engine does not support output constraints")
+            payload["structured_outputs"] = request.output_constraint.vllm_parameters()
         state: CompletionState
+        constrained_text: list[str] = []
+        constrained_bytes = 0
         if request.messages is None:
             payload["prompt"] = request.prompt
             url, state = self._url, CompletionState(maximum_tokens=request.max_tokens)
@@ -228,10 +237,22 @@ class OpenAICompletionEngine:
                     except StopAsyncIteration:
                         raise EngineProtocolError("Engine stream ended without DONE") from None
                     if event == "[DONE]":
+                        if (
+                            request.output_constraint is not None
+                            and not request.output_constraint.accepts("".join(constrained_text))
+                        ):
+                            raise EngineProtocolError(
+                                "Engine output did not satisfy requested shape"
+                            )
                         yield state.final_token()
                         return
                     text = state.consume(event)
                     if text:
+                        if request.output_constraint is not None:
+                            constrained_bytes += len(text.encode("utf-8"))
+                            if constrained_bytes > MAXIMUM_CONSTRAINED_OUTPUT_BYTES:
+                                raise EngineProtocolError("Constrained output exceeded byte limit")
+                            constrained_text.append(text)
                         yield EngineToken(text=text, generated_tokens=0)
             finally:
                 await response.aclose()

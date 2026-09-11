@@ -70,6 +70,34 @@ def profile(model: ModelManifest) -> ServingProfileV1:
     )
 
 
+def test_structured_backend_is_pinned_and_changes_profile_identity() -> None:
+    """Grammar selection is explicit runtime configuration; absent fields preserve old profiles."""
+    model = manifest()
+    original = profile(model)
+    assert "structured_output_backend" not in VLLMParameters().model_dump()
+    # Captured from source 65669c6; historical profiles must remain byte-identical.
+    assert hashlib.sha256(VLLMParameters().model_dump_json().encode()).hexdigest() == (
+        "a542107694ce8bb59bef72ab35f6c95a9245899108b42f06cddfd2bfb4518634"
+    )
+    changed = original.model_copy(
+        update={
+            "engine_parameters_json": VLLMParameters(
+                structured_output_backend="xgrammar"
+            ).model_dump_json()
+        }
+    )
+    assert changed.digest() != original.digest()
+    command = engine_arguments(changed, model, "0.29.0")
+    assert json.loads(command[command.index("--structured-outputs-config") + 1]) == {
+        "backend": "xgrammar",
+        "disable_any_whitespace": False,
+    }
+    assert "--structured-output-backend" not in command
+    assert "--structured-outputs-config" not in engine_arguments(original, model, "0.29.0")
+    with pytest.raises(ValueError):
+        VLLMParameters.model_validate({"structured_output_backend": "auto"})
+
+
 def test_engine_parameters_and_model_identity_are_not_runtime_overrides() -> None:
     """Runtime command construction rejects unknown flags, package changes and unverified models."""
     model = manifest()

@@ -12,6 +12,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from finserve.contracts.inference import EngineToken, InferenceRequest
 from finserve.engines.openai_adapter import OpenAICompletionEngine
+from finserve.engines.vllm_adapter import VLLMEngine
 from finserve.gateway.app import create_app, error_response
 from finserve.reliability.warm_routes import RouteSnapshot, WarmRouteStore
 
@@ -20,6 +21,9 @@ request_route: ContextVar[RouteSnapshot | None] = ContextVar("finserve_warm_rout
 
 class WarmRouteEngine:
     """HTTP proxy clients own zero GPUs; backend processes remain independently managed."""
+
+    # Preserve requests through the pinned route; each selected adapter checks its own capability.
+    supports_output_constraints = True
 
     def __init__(self, store: WarmRouteStore, deployment_id: str) -> None:
         """The registry's fixed endpoint cap also bounds the lifetime client pool."""
@@ -36,9 +40,10 @@ class WarmRouteEngine:
                 raise ValueError("configured backend credential is unavailable")
             # Concurrent first requests may finish lookup together; create only one pool.
             if snapshot.revision_id not in self.clients:
-                self.clients[snapshot.revision_id] = OpenAICompletionEngine(
-                    configuration.base_url, api_key=key
+                adapter = (
+                    VLLMEngine if backend.revision.engine == "vllm" else OpenAICompletionEngine
                 )
+                self.clients[snapshot.revision_id] = adapter(configuration.base_url, api_key=key)
         return self.clients[snapshot.revision_id]
 
     async def stream(self, request: InferenceRequest) -> AsyncGenerator[EngineToken, None]:

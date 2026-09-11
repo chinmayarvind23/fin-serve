@@ -1,10 +1,20 @@
 """Bound request work before it can consume engine memory or scheduling slots."""
 
 import json
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
+
+from finserve.contracts.output_constraint import OutputConstraint
 
 
 def request_id() -> str:
@@ -20,7 +30,23 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=32768)
 
 
-class InferenceRequest(BaseModel):
+class OutputConstrainedRequest(BaseModel):
+    """Omit absent constraints so legacy routed request identities retain their original bytes."""
+
+    output_constraint: OutputConstraint | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_unconstrained_encoding(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """Explicit constraints remain in every serialized request and any content-derived key."""
+        result: dict[str, Any] = handler(self)
+        if self.output_constraint is None:
+            result.pop("output_constraint", None)
+        return result
+
+
+class InferenceRequest(OutputConstrainedRequest):
     """Only supported generation options are accepted; unknown options fail explicitly."""
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -72,7 +98,7 @@ class ChatStreamOptions(BaseModel):
         return value
 
 
-class ChatRequest(BaseModel):
+class ChatRequest(OutputConstrainedRequest):
     """A small compatible chat surface avoids silently ignoring unsupported parameters."""
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -94,6 +120,7 @@ class ChatRequest(BaseModel):
             temperature=self.temperature,
             timeout_seconds=self.timeout_seconds,
             stream=self.stream,
+            output_constraint=self.output_constraint,
         )
 
 

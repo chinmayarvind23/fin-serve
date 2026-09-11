@@ -7,6 +7,7 @@ The source packages below are implemented. Runtime and acceptance limits are sep
 | Module | Mechanism |
 | --- | --- |
 | `contracts/inference.py` | Strict bounded text/chat input, request IDs and engine token envelopes |
+| `contracts/output_constraint.py` | Bounded caller output shapes, fixed native grammars and terminal syntax validation |
 | `contracts/vision.py` | Single inline PNG, image/text capability, pixel/output/deadline envelope |
 | `gateway/app.py` | Application-scoped serving dependencies, lease-owned SSE, metrics and lifespan cleanup |
 | `gateway/body_limit.py` | Actual byte counting and exact-route delegation to independently bounded handlers |
@@ -30,6 +31,10 @@ The source packages below are implemented. Runtime and acceptance limits are sep
 | `http_ownership.py` | One retained response-close task through repeated cancellation, with explicit unresolved cleanup failure |
 
 ## Stream accounting and ownership
+
+Explicit output constraints survive chat conversion and Ray serialization. Unconstrained requests omit the new field to preserve existing wire identities. The vLLM adapter translates fixed typed shapes into `structured_outputs`; unknown native capabilities and fixture/reference engines reject them. Warm routing selects the adapter from the pinned backend revision. These choices do not change engine batching or the release evaluator.
+
+For constrained requests, the native adapter retains at most 128 KiB of text while streaming original fragments. At DONE it validates syntax before publishing terminal success. This catches incomplete JSON at a token limit, duplicate keys and wrong JSON value types without repairing the answer. The buffer applies only to explicitly constrained requests. Invalid streamed content remains visible as partial failed output. Managed profiles optionally pin xgrammar with whitespace permitted; absent configuration preserves historical profile hashes. Benchmark mapping and grammar first-use measurements remain a separate uncompleted step.
 
 Producer failure cleanup uses immutable launch and build receipts, so damaged model files do
 not prevent stopping an exactly identified owned process. It retires only revisions that have

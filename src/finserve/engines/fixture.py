@@ -11,6 +11,8 @@ class FixtureEngine:
 
     async def stream(self, request: InferenceRequest) -> AsyncIterator[EngineToken]:
         """Echo bounded prompt characters; yield control so disconnects can cancel work."""
+        if request.output_constraint is not None:
+            raise ValueError("Fixture engine does not support output constraints")
         for char in (request.prompt + " ")[: request.max_tokens]:
             await asyncio.sleep(0)
             yield EngineToken(text=char, token_id=ord(char))

@@ -47,6 +47,7 @@ class BackendConfiguration(BaseModel):
     capacity_per_worker: int = Field(default=16, ge=1, le=128, strict=True)
     mode: Literal["least_load", "adaptive"] = "least_load"
     observe_engine_metrics: bool = False
+    vllm_structured_outputs: bool = False
     shared_gpu_uuid: str | None = Field(default=None, min_length=1, max_length=256)
 
     @model_validator(mode="after")
@@ -82,6 +83,7 @@ class OpenAIEngineReplica(FixtureReplica):
         model: str,
         base_url: str,
         observe_engine_metrics: bool = False,
+        vllm_structured_outputs: bool = False,
     ) -> None:
         """Resolve the engine credential from the trusted worker environment."""
         from finserve.auth import require_credentials
@@ -89,7 +91,10 @@ class OpenAIEngineReplica(FixtureReplica):
         require_credentials("FINSERVE_ENGINE_API_KEY")
         super().__init__(replica_id, capacity, 0)
         self.model = model
-        self.engine = OpenAICompletionEngine(base_url, api_key=os.getenv("FINSERVE_ENGINE_API_KEY"))
+        from finserve.engines.vllm_adapter import VLLMEngine
+
+        adapter = VLLMEngine if vllm_structured_outputs else OpenAICompletionEngine
+        self.engine = adapter(base_url, api_key=os.getenv("FINSERVE_ENGINE_API_KEY"))
         self.health_url = base_url.rstrip("/") + "/models"
         self.metrics_url = str(httpx.URL(base_url).copy_with(path="/metrics"))
         self.observe_engine_metrics = observe_engine_metrics
@@ -431,6 +436,7 @@ def build_application(args: dict[str, Any]) -> Any:
             configuration.model,
             endpoint,
             configuration.observe_engine_metrics,
+            configuration.vllm_structured_outputs,
         )
         for name, endpoint in configuration.backends.items()
     }

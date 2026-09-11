@@ -158,6 +158,8 @@ class PyTorchReferenceEngine:
         """
         if self._closed:
             raise RuntimeError("Reference engine is closed")
+        if request.output_constraint is not None:
+            raise ValueError("Reference engine does not support output constraints")
         if request.temperature != 0:
             raise ValueError("The educational reference engine supports temperature=0 only")
         tokens = self.encode(request.prompt)

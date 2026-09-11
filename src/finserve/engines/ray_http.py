@@ -58,6 +58,9 @@ async def envelopes(response: httpx.Response, maximum: int) -> AsyncIterator[Ray
 class RayHTTPEngine:
     """Own a bounded HTTP pool to an operator-configured private routing application."""
 
+    # This relay preserves the contract; the selected remote engine must also support it.
+    supports_output_constraints = True
+
     def __init__(
         self,
         url: str,

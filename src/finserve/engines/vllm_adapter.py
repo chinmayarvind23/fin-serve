@@ -5,3 +5,5 @@ from finserve.engines.openai_adapter import OpenAICompletionEngine
 
 class VLLMEngine(OpenAICompletionEngine):
     """Use a separately deployed vLLM server, which owns continuous batching and GPU memory."""
+
+    supports_output_constraints = True

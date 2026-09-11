@@ -7,9 +7,9 @@ import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer
 
 from finserve.contracts.deployment import ImmutableModel
 from finserve.contracts.model_assets import ModelManifest
@@ -35,6 +35,17 @@ class VLLMParameters(ImmutableModel):
     enable_chunked_prefill: bool = Field(default=True, strict=True)
     use_v2_model_runner: bool = Field(default=False, strict=True)
     use_flashinfer_sampler: bool = Field(default=False, strict=True)
+    structured_output_backend: Literal["xgrammar"] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_unconstrained_profile(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """Do not change historical profile hashes when no explicit grammar backend was selected."""
+        result: dict[str, Any] = handler(self)
+        if self.structured_output_backend is None:
+            result.pop("structured_output_backend", None)
+        return result
 
 
 def engine_arguments(
@@ -75,12 +86,27 @@ def engine_arguments(
         "--generation-config",
         "vllm",
     ]
-    for name, value in parameters.model_dump(exclude=ENV_PARAMETERS).items():
+    for name, value in parameters.model_dump(
+        exclude=ENV_PARAMETERS | {"structured_output_backend"}
+    ).items():
         flag = name.replace("_", "-")
         if isinstance(value, bool):
             arguments.append("--" + ("" if value else "no-") + flag)
         else:
             arguments.extend(("--" + flag, str(value)))
+    if parameters.structured_output_backend is not None:
+        arguments.extend(
+            (
+                "--structured-outputs-config",
+                json.dumps(
+                    {
+                        "backend": parameters.structured_output_backend,
+                        "disable_any_whitespace": False,
+                    },
+                    sort_keys=True,
+                ),
+            )
+        )
     return arguments
 
 
