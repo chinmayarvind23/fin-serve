@@ -24,6 +24,7 @@ from finserve.http_ownership import HTTPClosureError, own_response
 from finserve.registry.model_assets import owned_disk
 from finserve.reliability.promotion import PromotionDecision
 from finserve.reliability.rollback import ApplyRequest, ControlConflict, DeploymentStore
+from finserve.reliability.store_identity import initialize_identity, open_existing, verify_identity
 
 
 class BackendConfiguration(ImmutableModel):
@@ -91,12 +92,17 @@ class RouteSnapshot(ImmutableModel):
 class WarmRouteStore:
     """External traffic truth is separate from orchestration intent but owns the final CAS fence."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, expected_identity: str | None = None) -> None:
         """Keep SQLite WAL/FULL state outside source, with short transactions around cutovers."""
         self.path = path.resolve()
         repository = Path(__file__).resolve().parents[3]
         if self.path == repository or repository in self.path.parents:
             raise ValueError("routing truth must be outside the source repository")
+        if expected_identity is not None:
+            self.identity = expected_identity
+            with self.transaction():
+                pass
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path, isolation_level=None)) as connection:
             connection.execute("PRAGMA journal_mode=WAL")
@@ -111,14 +117,16 @@ class WarmRouteStore:
                 CREATE TABLE IF NOT EXISTS warm_retirements(id TEXT PRIMARY KEY,
                     digest TEXT NOT NULL);
             """)
+            self.identity = initialize_identity(connection)
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection]:
         """BEGIN IMMEDIATE commits route selection and its action receipt atomically."""
-        connection = sqlite3.connect(self.path, isolation_level=None, timeout=5)
+        connection = open_existing(self.path)
         try:
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("BEGIN IMMEDIATE")
+            verify_identity(connection, self.identity)
             yield connection
             connection.execute("COMMIT")
         except BaseException:

@@ -23,6 +23,7 @@ from finserve.contracts.deployment import (
     RollbackStatus,
 )
 from finserve.reliability.promotion import PromotionDecision
+from finserve.reliability.store_identity import initialize_identity, open_existing, verify_identity
 
 Table = Literal["revisions", "deployments", "rollbacks", "decisions", "activations"]
 
@@ -107,14 +108,25 @@ def validate_transition(
 class DeploymentStore:
     """One local durable truth database; transactions are short and never span network awaits."""
 
-    def __init__(self, path: Path, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        path: Path,
+        clock: Callable[[], float] = time.time,
+        *,
+        expected_identity: str | None = None,
+    ) -> None:
         """Use WAL/FULL sync for crash recovery and real UTC epoch time by default."""
         self.path = path.resolve()
         repository = Path(__file__).resolve().parents[3]
         if self.path == repository or repository in self.path.parents:
             raise ValueError("control-plane truth must be outside the source repository")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.clock = clock
+        if expected_identity is not None:
+            self.identity = expected_identity
+            with self.transaction():
+                pass
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path, isolation_level=None)) as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
@@ -132,14 +144,16 @@ class DeploymentStore:
                 CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation_id TEXT NOT NULL, observed_at REAL NOT NULL, payload TEXT NOT NULL);
             """)
+            self.identity = initialize_identity(connection)
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection]:
         """BEGIN IMMEDIATE serializes compare-and-swap decisions across processes."""
-        connection = sqlite3.connect(self.path, isolation_level=None, timeout=5)
+        connection = open_existing(self.path)
         try:
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("BEGIN IMMEDIATE")
+            verify_identity(connection, self.identity)
             yield connection
             connection.execute("COMMIT")
         except BaseException:

@@ -43,6 +43,20 @@ The warm adapter switches traffic between already running registered backends an
 
 ## Producer integration still to complete
 
+`producer_pipeline.freeze_stage()` reads `FINSERVE_PRODUCER_REQUEST`, a server-owned JSON
+`ProducerExecution` containing `producer` (`ProducerInput`), `routes` and `control`. The read
+is capped at four MiB. Route and controller databases must already exist at distinct canonical
+paths outside the checkout. Their paths and persistent database identities are frozen with
+the job before collection. Existing stores need the current store schema, including identity
+metadata; task entry points never migrate or initialize them.
+`collection_stage(job_id, step)` reopens the configured registry and artifact store for one
+producer action. `cleanup_stage(job_id)` uses the frozen route/control paths, ignores later
+changes to the request file, and refuses missing or recreated stores. Every store transaction
+opens with SQLite `mode=rw` and verifies identity before reading protected state. It stops only verified never-served
+producer runtimes. The registry and artifact environment must retain their original namespace
+across tasks. These callable entries are verified with actual fixture-byte fetch and replay;
+the complete DAG and rollout tail are still pending.
+
 `producer_runtime.freeze_producer` now freezes server-owned source/model inputs, paired typed
 engine configurations, load, suite, policy and workspace. `produce_step` accepts that job ID
 and an explicit fetch/build/freeze/launch/quality/performance task name. It derives image and

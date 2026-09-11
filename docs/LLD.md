@@ -56,6 +56,14 @@ The inference edge has its own coarse bound and passes cancellation upstream. Fa
 
 ## Durable state and identities
 
+Route and rollback stores retain a persistent UUID created during explicit initialization.
+Producer execution freezes both UUIDs with their paths. Task reopens require those identities
+and do not create schemas. Every transaction opens the existing database with SQLite
+`mode=rw` and checks its UUID after acquiring the write lock. A missing file cannot be silently
+recreated between validation and open; a replacement database cannot become empty authoritative
+state for cleanup. This protects local task retries, and is not a database backup or recovery
+protocol.
+
 Visual-job idempotency includes the normalized request and principal. The coordinator persists generation/state and fences worker results. An artifact is complete only after its bytes and expected digest have been verified and the corresponding terminal job update succeeds. Cancellation uses worker-instance identity so an old cancellation cannot affect a replacement process.
 
 Registry objects use immutable content hashes and database constraints. Identical retries succeed; conflicting identity reuse fails. Run registration validates manifest/request/summary consistency before publishing CAS references. Artifact reads verify namespace, size and SHA256. Quality annotation additionally verifies the installed grader source (only LF/CRLF normalization is accepted), the reference's embedded suite and answer linkage. GPU annotation reconstructs the exact measured clock window and rejects shifted epoch boundaries with an absolute tolerance.
