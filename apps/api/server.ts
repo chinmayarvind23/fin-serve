@@ -10,7 +10,7 @@ const handler = createProxy({
 Bun.serve({
   hostname: process.env.FINSERVE_EDGE_HOST ?? "127.0.0.1",
   port: Number(process.env.FINSERVE_EDGE_PORT ?? "8040"),
-  maxRequestBodySize: 131072,
+  maxRequestBodySize: 1450000,
   idleTimeout: 10,
   /** A request's explicit overall timer owns streaming lifetime after bounded HTTP header parsing. */
   fetch(request, server) {

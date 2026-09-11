@@ -6,7 +6,7 @@ import json
 import os
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import aclosing, asynccontextmanager
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,8 +19,10 @@ from starlette.types import Receive, Scope, Send
 
 from finserve.cache.redis_state import RateLimiter
 from finserve.contracts.inference import ChatRequest, EngineToken, InferenceRequest
+from finserve.contracts.vision import VISION_MODEL
 from finserve.engines.base import Engine
 from finserve.engines.fixture import FixtureEngine
+from finserve.engines.vision_openai import VisionEngine
 from finserve.gateway.admission import Admission
 from finserve.gateway.body_limit import BodyLimit
 from finserve.multimodal.jobs import VisualJobCoordinator, VisualJobStore
@@ -290,10 +292,13 @@ def create_app(
     revision: str = "unrecorded",
     rate_limiter: RateLimiter | None = None,
     visual_jobs: VisualJobCoordinator | None = None,
+    vision_engine: VisionEngine | None = None,
+    vision_model: str = VISION_MODEL,
+    vision_capacity: int = 1,
 ) -> FastAPI:
     """Tests inject engines; deployments select an explicit backend through the factory."""
-    if visual_jobs is not None and not api_key:
-        raise ValueError("visual job serving requires an API credential")
+    if (visual_jobs is not None or vision_engine is not None) and not api_key:
+        raise ValueError("multimodal serving requires an API credential")
     serving = Serving(
         engine or FixtureEngine(),
         Admission(max_concurrency),
@@ -307,28 +312,35 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         """Close pooled clients when shutdown completes; Uvicorn handles request draining."""
-        try:
+        async with AsyncExitStack() as cleanup:
+            # Every resource closes even if another close or the coordinator's startup fails.
+            if tracing is not None:
+                cleanup.push_async_callback(asyncio.to_thread, tracing.close)
+            if rate_limiter is not None:
+                cleanup.push_async_callback(rate_limiter.close)
+            cleanup.push_async_callback(serving.engine.close)
+            if vision_engine is not None:
+                cleanup.push_async_callback(vision_engine.close)
             if visual_jobs is not None:
+                cleanup.push_async_callback(visual_jobs.close)
                 visual_jobs.start()
             yield
-        finally:
-            try:
-                if visual_jobs is not None:
-                    await visual_jobs.close()
-            finally:
-                try:
-                    await serving.engine.close()
-                finally:
-                    try:
-                        if rate_limiter is not None:
-                            await rate_limiter.close()
-                    finally:
-                        if tracing is not None:
-                            await asyncio.to_thread(tracing.close)
 
     app = FastAPI(title="FinServe", version="0.1.0", lifespan=lifespan)
-    app.add_middleware(BodyLimit)
+    # Vision authenticates and acquires its own image slot before reading its larger bounded body.
+    app.add_middleware(
+        BodyLimit,
+        delegated_paths=frozenset({"/v1/vision/completions"})
+        if vision_engine is not None
+        else frozenset(),
+    )
     app.state.serving = serving
+    if vision_engine is not None:
+        from finserve.gateway.vision import register_vision_routes
+
+        app.state.vision = register_vision_routes(
+            app, vision_engine, vision_model, api_key, vision_capacity
+        )
     if visual_jobs is not None and api_key is not None:
         from finserve.gateway.visual_routes import register_visual_routes
 
@@ -417,6 +429,13 @@ def from_env() -> FastAPI:
         if trace_path
         else None
     )
+    vision_engine = None
+    if vision_url := os.getenv("FINSERVE_VISION_ENGINE_URL"):
+        from finserve.engines.vision_openai import OpenAIVisionEngine
+
+        vision_engine = OpenAIVisionEngine(
+            vision_url, api_key=os.getenv("FINSERVE_VISION_ENGINE_KEY")
+        )
     return create_app(
         engine,
         model=os.getenv("FINSERVE_MODEL", "reference"),
@@ -426,4 +445,7 @@ def from_env() -> FastAPI:
         revision=os.getenv("FINSERVE_REVISION", "unrecorded"),
         rate_limiter=rate_limiter,
         visual_jobs=visual_jobs,
+        vision_engine=vision_engine,
+        vision_model=os.getenv("FINSERVE_VISION_MODEL", VISION_MODEL),
+        vision_capacity=int(os.getenv("FINSERVE_VISION_CAPACITY", "1")),
     )

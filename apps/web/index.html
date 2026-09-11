@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'" />
+  <title>FinServe · Evidence explorer</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="module" src="./client.ts"></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="/" aria-label="FinServe home"><span class="mark">F</span> FinServe</a>
+    <p class="eyebrow">INFERENCE OPERATIONS</p>
+    <nav aria-label="Evidence views"><a href="#comparison" class="active">01 &nbsp; Compare runs</a><a href="#quality">02 &nbsp; Quality evidence</a><a href="#requests">03 &nbsp; Request records</a><a href="#history">04 &nbsp; Release history</a></nav>
+    <div class="access"><span class="eyebrow">REGISTRY ACCESS</span><form id="connect"><label for="credential">Explorer key</label><input id="credential" type="password" autocomplete="off" required minlength="16" placeholder="Enter access key" /><button type="submit">Connect to registry <span aria-hidden="true">↗</span></button></form><button id="disconnect" class="quiet" type="button">Disconnect</button><p>The key stays in this page’s memory and is cleared on disconnect.</p></div>
+    <div class="sidebar-foot">PyTorch · Ray · vLLM<br />Measured. Retained. Reviewable.</div>
+  </aside>
+  <main>
+    <header><div><p class="eyebrow">FINSERVE / EVIDENCE EXPLORER</p><h1>Evidence, before promotion.</h1><p class="subtitle">Compare serving performance with the quality and provenance behind it.</p></div><span id="connection" class="pill">Disconnected</span></header>
+    <p id="status" role="status" aria-live="polite">Connect to view registered measurements.</p>
+    <div id="workspace" hidden>
+      <section id="comparison" aria-labelledby="comparison-title"><div class="section-head"><div><p class="eyebrow">01 / PERFORMANCE</p><h2 id="comparison-title">A comparison with context</h2></div><button id="refresh" type="button" class="quiet">Refresh evidence ↻</button></div>
+        <div class="selectors"><label>Baseline<select id="baseline"></select></label><label>Candidate<select id="candidate"></select></label><label>Workload slice<select id="slice"><option value="all">All measured requests</option></select></label></div>
+        <div id="provenance" class="notice"></div><div id="metrics" class="metrics"></div><div class="two-columns"><article class="panel"><h3>Measured outcomes</h3><p class="muted">Each bar uses the same scale within its metric.</p><div id="bars"></div></article><article class="panel"><h3>Configuration & identity</h3><div id="configuration"></div></article></div>
+      </section>
+      <section id="quality" aria-labelledby="quality-title"><div class="section-head"><div><p class="eyebrow">02 / CORRECTNESS</p><h2 id="quality-title">Speed needs a quality gate</h2></div></div><div id="quality-content" class="two-columns"></div></section>
+      <section id="requests" aria-labelledby="requests-title"><div class="section-head"><div><p class="eyebrow">03 / RAW EVIDENCE</p><h2 id="requests-title">Every request has a record</h2></div><div class="pager"><button id="previous" class="quiet" type="button">← Previous</button><span id="page"></span><button id="next" class="quiet" type="button">Next →</button></div></div><p class="muted">Candidate run · warmup and failures retained · output is rendered as plain text.</p><div id="request-table" class="table-wrap"></div></section>
+      <section id="history" aria-labelledby="history-title"><div class="section-head"><div><p class="eyebrow">04 / CONTROL PLANE</p><h2 id="history-title">Release history</h2></div></div><div id="history-content" class="panel"></div></section>
+      <footer>Metrics describe these observations. Native runs with undeclared images do not establish deployment identity or cloud cost.</footer>
+    </div>
+  </main>
+</body>
+</html>

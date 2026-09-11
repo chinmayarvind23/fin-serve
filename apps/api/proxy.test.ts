@@ -6,6 +6,90 @@ const key = "development-edge-key-32-characters";
 const upstreamKey = "development-upstream-key-32-characters";
 const servers: Bun.Server<undefined>[] = [];
 
+test("vision uploads have a dedicated byte cap without widening text or evidence", async () => {
+  // The reverse proxy preserves large image bodies while keeping the smaller text envelope.
+  let calls = 0;
+  const upstream = serve(async (incoming) => {
+    calls++;
+    return Response.json({ received: (await incoming.arrayBuffer()).byteLength });
+  });
+  const proxy = createProxy({ upstream: upstream.url.toString(), apiKey: key, upstreamKey });
+  const vision = (size: number) =>
+    new Request("http://edge/v1/vision/completions", {
+      method: "POST",
+      body: new Uint8Array(size),
+      headers: { Authorization: `Bearer ${key}` },
+    });
+  expect(await (await proxy(vision(131073))).json()).toEqual({ received: 131073 });
+  expect((await proxy(vision(1450001))).status).toBe(413);
+  expect((await proxy(request(new Uint8Array(131073)))).status).toBe(413);
+  expect(calls).toBe(1);
+});
+
+test("evidence surface exposes only bounded authenticated GraphQL reads", async () => {
+  // The website's proxy cannot become an alternate entry point for inference or mutable jobs.
+  let calls = 0;
+  const upstream = serve((incoming) => {
+    calls++;
+    expect(incoming.headers.get("authorization")).toBe(`Bearer ${upstreamKey}`);
+    return Response.json({ data: { runs: [] } });
+  });
+  const proxy = createProxy({
+    upstream: upstream.url.toString(),
+    apiKey: key,
+    upstreamKey,
+    surface: "evidence",
+  });
+  expect((await proxy(request())).status).toBe(404);
+  expect(
+    (await proxy(new Request("http://edge/graphql", { method: "POST", body: "{}" }))).status,
+  ).toBe(401);
+  expect(
+    (
+      await proxy(
+        new Request("http://edge/graphql", {
+          method: "POST",
+          body: "x".repeat(16385),
+          headers: { Authorization: `Bearer ${key}` },
+        }),
+      )
+    ).status,
+  ).toBe(413);
+  expect(calls).toBe(0);
+  const result = await proxy(
+    new Request("http://edge/graphql", {
+      method: "POST",
+      body: '{"query":"{ runs { id } }"}',
+      headers: { Authorization: `Bearer ${key}` },
+    }),
+  );
+  expect(await result.json()).toEqual({ data: { runs: [] } });
+  expect(calls).toBe(1);
+});
+
+test("evidence response cap fails closed and returns capacity", async () => {
+  // The existing stream owner applies the smaller evidence limit before yielding excess bytes.
+  let calls = 0;
+  const upstream = serve(
+    () => new Response(++calls === 1 ? new Uint8Array(2 * 1024 * 1024 + 1) : "ok"),
+  );
+  const proxy = createProxy({
+    upstream: upstream.url.toString(),
+    apiKey: key,
+    upstreamKey,
+    surface: "evidence",
+    maxActive: 1,
+  });
+  const makeRequest = () =>
+    new Request("http://edge/graphql", {
+      method: "POST",
+      body: "{}",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+  await expect((await proxy(makeRequest())).text()).rejects.toThrow("UPSTREAM_STREAM_FAILED");
+  expect(await (await proxy(makeRequest())).text()).toBe("ok");
+});
+
 /** Dispose only ephemeral servers created by this test module. */
 afterEach(() => {
   for (const server of servers.splice(0)) server.stop(true);

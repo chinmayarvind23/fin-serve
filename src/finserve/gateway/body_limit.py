@@ -9,16 +9,23 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 class BodyLimit:
     """Buffer at most the limit before routing so oversized inputs cannot reach JSON parsing."""
 
-    def __init__(self, app: ASGIApp, max_bytes: int = 131072) -> None:
+    def __init__(
+        self, app: ASGIApp, max_bytes: int = 131072, delegated_paths: frozenset[str] = frozenset()
+    ) -> None:
         """A fixed small cap covers text requests; media gets separate upload contracts."""
         self.app = app
         self.max_bytes = max_bytes
+        self.delegated_paths = delegated_paths
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Preserve disconnect semantics after replaying the bounded request body once."""
         if scope["type"] == "http":
             scope.setdefault("state", {}).setdefault("finserve_received", time.perf_counter())
-        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
+        if (
+            scope["type"] != "http"
+            or scope["method"] not in {"POST", "PUT", "PATCH"}
+            or scope["path"] in self.delegated_paths
+        ):
             await self.app(scope, receive, send)
             return
         body = bytearray()

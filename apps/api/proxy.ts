@@ -7,6 +7,7 @@ export interface ProxyConfig {
   upstreamKey: string;
   timeoutMs?: number;
   maxActive?: number;
+  surface?: "inference" | "evidence";
 }
 
 /** Fixed envelopes prevent upstream connection addresses and exception text leaking to callers. */
@@ -21,11 +22,17 @@ function authenticated(header: string | null, key: string): boolean {
 }
 
 /** Only versioned inference/job endpoints are exposed; admin and caller-selected destinations stay private. */
-function permitted(method: string, path: string): boolean {
+function permitted(method: string, path: string, surface: "inference" | "evidence"): boolean {
+  if (surface === "evidence") return method === "POST" && path === "/graphql";
   return (
     (method === "GET" && path === "/v1/visual/models") ||
     (method === "POST" &&
-      ["/v1/completions", "/v1/chat/completions", "/v1/visual/jobs"].includes(path)) ||
+      [
+        "/v1/completions",
+        "/v1/chat/completions",
+        "/v1/visual/jobs",
+        "/v1/vision/completions",
+      ].includes(path)) ||
     (["GET", "DELETE"].includes(method) &&
       /^\/v1\/visual\/jobs\/[A-Za-z0-9_-]{1,128}$/.test(path)) ||
     (method === "GET" && /^\/v1\/visual\/jobs\/[A-Za-z0-9_-]{1,128}\/artifact$/.test(path))
@@ -36,6 +43,7 @@ function permitted(method: string, path: string): boolean {
 async function boundedBody(
   request: Request,
   signal: AbortSignal,
+  maximum: number,
 ): Promise<Uint8Array<ArrayBuffer> | undefined> {
   if (!request.body) return undefined;
   const reader = request.body.getReader();
@@ -50,7 +58,7 @@ async function boundedBody(
       signal.throwIfAborted();
       if (part.done) break;
       size += part.value.byteLength;
-      if (size > 131072) throw new RangeError("BODY_TOO_LARGE");
+      if (size > maximum) throw new RangeError("BODY_TOO_LARGE");
       chunks.push(part.value);
     }
     const result = new Uint8Array(size);
@@ -72,6 +80,7 @@ export function createProxy(config: ProxyConfig): (request: Request) => Promise<
   const upstream = new URL(config.upstream);
   const timeoutMs = config.timeoutMs ?? 300000;
   const maxActive = config.maxActive ?? 64;
+  const surface = config.surface ?? "inference";
   if (
     !["http:", "https:"].includes(upstream.protocol) ||
     upstream.username ||
@@ -86,7 +95,8 @@ export function createProxy(config: ProxyConfig): (request: Request) => Promise<
     timeoutMs > 300000 ||
     !Number.isInteger(maxActive) ||
     maxActive < 1 ||
-    maxActive > 1024
+    maxActive > 1024 ||
+    !["inference", "evidence"].includes(surface)
   )
     throw new Error("Invalid edge configuration");
   let active = 0;
@@ -98,7 +108,8 @@ export function createProxy(config: ProxyConfig): (request: Request) => Promise<
       return Response.json({ status: "ok", scope: "edge liveness" });
     if (!authenticated(request.headers.get("authorization"), config.apiKey))
       return failure("UNAUTHORIZED", 401);
-    if (url.search || !permitted(request.method, url.pathname)) return failure("NOT_FOUND", 404);
+    if (url.search || !permitted(request.method, url.pathname, surface))
+      return failure("NOT_FOUND", 404);
     if (active >= maxActive) return failure("EDGE_OVERLOADED", 429);
     active++;
     const controller = new AbortController();
@@ -126,7 +137,15 @@ export function createProxy(config: ProxyConfig): (request: Request) => Promise<
     request.signal.addEventListener("abort", aborted, { once: true });
     if (request.signal.aborted) release();
     try {
-      const body = await boundedBody(request, controller.signal);
+      const body = await boundedBody(
+        request,
+        controller.signal,
+        surface === "evidence"
+          ? 16384
+          : url.pathname === "/v1/vision/completions"
+            ? 1450000
+            : 131072,
+      );
       const headers = new Headers({ Authorization: `Bearer ${config.upstreamKey}` });
       headers.set("Content-Type", "application/json");
       const idempotency = request.headers.get("idempotency-key");
@@ -172,7 +191,8 @@ export function createProxy(config: ProxyConfig): (request: Request) => Promise<
                 return;
               }
               size += chunk.value.byteLength;
-              if (size > 8 * 1024 * 1024) throw new Error("UPSTREAM_TOO_LARGE");
+              if (size > (surface === "evidence" ? 2 : 8) * 1024 * 1024)
+                throw new Error("UPSTREAM_TOO_LARGE");
               output.enqueue(chunk.value);
             } catch {
               output.error(new Error("UPSTREAM_STREAM_FAILED"));

@@ -110,7 +110,8 @@ SCHEMA = """
 type Configuration {
   engine: String!, engineConfig: String!, model: String!, modelRevision: String!,
   tokenizerRevision: String!, sourceRevision: String!, imageDigest: String!, hardware: String!,
-  workloadHash: String!, concurrency: Int!, warmup: Int!, cachePolicy: String!
+  workloadHash: String!, concurrency: Int!, warmup: Int!, cachePolicy: String!,
+  arrivalMode: String!, arrivalRate: Float!, timeoutSeconds: Float!
 }
 type Metrics {
   offered: Int!, succeeded: Int!, failed: Int!, seconds: Float!, requestsPerSecond: Float!,
@@ -308,6 +309,9 @@ class EvidenceReader:
                 "workloadHash": bundle.workload_hash,
                 "concurrency": configuration["concurrency"],
                 "warmup": configuration["warmup"],
+                "arrivalMode": configuration["mode"],
+                "arrivalRate": configuration["rate"],
+                "timeoutSeconds": configuration["timeout_s"],
                 "cachePolicy": configuration["cache_policy"],
             },
             "metrics": metric_view(summary),

@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["apps/api/**/*.ts"]
+  "include": ["apps/api/**/*.ts", "apps/web/**/*.ts"]
 }
