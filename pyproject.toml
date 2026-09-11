@@ -16,6 +16,7 @@ registry = ["sqlalchemy>=2,<3", "psycopg[binary]>=3,<4", "mlflow>=3,<4", "boto3>
 multimodal = ["jax>=0.6,<1", "flax>=0.10,<1", "pillow>=11,<13"]
 vision = ["pillow>=11,<13"]
 explorer = ["graphql-core>=3.2,<3.3", "sqlalchemy>=2,<3"]
+telemetry = ["opentelemetry-exporter-otlp-proto-http>=1.30,<2", "requests>=2.32,<3"]
 visual-worker = ["grpcio==1.78.0", "protobuf==6.33.5"]
 visual-proto = ["grpcio-tools==1.78.0"]
 orchestration = ["apache-airflow==3.3.0; platform_system != 'Windows' and python_version < '3.14'"]

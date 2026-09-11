@@ -1,4 +1,4 @@
-﻿# High-level design
+# High-level design
 
 FinServe separates active inference, durable jobs, release control and evidence browsing. A slow registry query or an Airflow retry should not own an engine's token scheduler. Each boundary has its own admission, identity and failure semantics.
 
@@ -32,7 +32,7 @@ A visual-generation job uses a different asynchronous API. SQLite persists accep
 | Immutable run/output artifacts | Local content-addressed store; S3 adapter | Real S3 access still requires authenticated deployment validation |
 | Warm active traffic route | Separate SQLite store with CAS generations | Current local controller is not a distributed consensus database |
 | Experiment tracking | MLflow adapter and local SDK execution | Remote hosting and service integration require deployment checks |
-| Observations | Raw requests, GPU samples, sampled OTel spans, Prometheus metrics | Cross-process trace propagation and hosted integrations remain in progress |
+| Observations | Raw requests, GPU samples, sampled OTel spans, Prometheus metrics | Actual text Ray/HTTP trace propagation is verified; hosted ingestion remains pending |
 
 Artifacts are immutable; SQL refers to their digest, length and namespace. A native run may explicitly omit a deployment image. A canonical release profile additionally binds model/tokenizer manifests, engine parameters and endpoint identity, while its Revision binds the actual image digest. Historical native results are never relabeled with an image built later.
 

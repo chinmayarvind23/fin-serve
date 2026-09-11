@@ -14,6 +14,7 @@ from finserve.engines.openai_adapter import (
     EngineProtocolError,
     EngineUnavailableError,
 )
+from finserve.telemetry.propagation import trace_headers
 
 
 class RayEnvelope(BaseModel):
@@ -95,7 +96,11 @@ class RayHTTPEngine:
         """Delay final accounting until clean EOF so partial transport failure cannot pass."""
         deadline = asyncio.get_running_loop().time() + request.timeout_seconds
         outbound = self._client.build_request(
-            "POST", self._url, json=request.model_dump(), timeout=request.timeout_seconds
+            "POST",
+            self._url,
+            json=request.model_dump(),
+            timeout=request.timeout_seconds,
+            headers=trace_headers(),
         )
         try:
             async with asyncio.timeout_at(deadline):

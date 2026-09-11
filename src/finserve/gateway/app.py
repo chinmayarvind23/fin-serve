@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from opentelemetry.context import Context
 from opentelemetry.trace import NoOpTracer, StatusCode, Tracer
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import ValidationError
@@ -27,7 +28,9 @@ from finserve.gateway.admission import Admission
 from finserve.gateway.body_limit import BodyLimit
 from finserve.multimodal.jobs import VisualJobCoordinator, VisualJobStore
 from finserve.telemetry.metrics import Metrics
-from finserve.telemetry.tracing import JsonSpanExporter, TraceRuntime
+from finserve.telemetry.propagation import next_in_span
+from finserve.telemetry.tracing import TraceRuntime
+from finserve.telemetry.tracing import from_env as tracing_from_env
 
 
 def error_response(code: str, status: int, request_id: str = "") -> JSONResponse:
@@ -142,6 +145,7 @@ class Serving:
         iterator: AsyncIterator[EngineToken] | None = None
         span = self.tracer.start_span(
             "finserve.inference",
+            context=Context(),
             attributes={
                 "gen_ai.request.model": request.model,
                 "finserve.max_tokens": request.max_tokens,
@@ -154,7 +158,11 @@ class Serving:
                 raise TimeoutError
             iterator = self.engine.stream(request)
             async with asyncio.timeout(remaining):
-                async for token in iterator:
+                while True:
+                    try:
+                        token = await next_in_span(iterator, span)
+                    except StopAsyncIteration:
+                        break
                     if token.finish_reason is not None:
                         finish_reason = token.finish_reason
                     count += token.generated_tokens
@@ -402,7 +410,6 @@ def from_env() -> FastAPI:
         )
     else:
         raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
-    trace_path = os.getenv("FINSERVE_TRACE_PATH")
     visual_jobs = None
     if visual_target := os.getenv("FINSERVE_VISUAL_GRPC_TARGET"):
         from finserve.multimodal.visual_rpc import VisualRPCClient
@@ -421,14 +428,6 @@ def from_env() -> FastAPI:
             limit=int(os.getenv("FINSERVE_RATE_LIMIT", "120")),
             window_ms=int(os.getenv("FINSERVE_RATE_WINDOW_MS", "60000")),
         )
-    tracing = (
-        TraceRuntime(
-            JsonSpanExporter(Path(trace_path)),
-            float(os.getenv("FINSERVE_TRACE_SAMPLE_RATIO", "0.01")),
-        )
-        if trace_path
-        else None
-    )
     vision_engine = None
     if vision_url := os.getenv("FINSERVE_VISION_ENGINE_URL"):
         from finserve.engines.vision_openai import OpenAIVisionEngine
@@ -436,16 +435,25 @@ def from_env() -> FastAPI:
         vision_engine = OpenAIVisionEngine(
             vision_url, api_key=os.getenv("FINSERVE_VISION_ENGINE_KEY")
         )
-    return create_app(
-        engine,
-        model=os.getenv("FINSERVE_MODEL", "reference"),
-        max_concurrency=int(os.getenv("FINSERVE_MAX_CONCURRENCY", "16")),
-        api_key=os.getenv("FINSERVE_API_KEY"),
-        tracing=tracing,
-        revision=os.getenv("FINSERVE_REVISION", "unrecorded"),
-        rate_limiter=rate_limiter,
-        visual_jobs=visual_jobs,
-        vision_engine=vision_engine,
-        vision_model=os.getenv("FINSERVE_VISION_MODEL", VISION_MODEL),
-        vision_capacity=int(os.getenv("FINSERVE_VISION_CAPACITY", "1")),
-    )
+    capacity = int(os.getenv("FINSERVE_MAX_CONCURRENCY", "16"))
+    vision_capacity = int(os.getenv("FINSERVE_VISION_CAPACITY", "1"))
+    # Exporter threads are acquired last and explicitly returned if construction fails.
+    tracing = tracing_from_env()
+    try:
+        return create_app(
+            engine,
+            model=os.getenv("FINSERVE_MODEL", "reference"),
+            max_concurrency=capacity,
+            api_key=os.getenv("FINSERVE_API_KEY"),
+            tracing=tracing,
+            revision=os.getenv("FINSERVE_REVISION", "unrecorded"),
+            rate_limiter=rate_limiter,
+            visual_jobs=visual_jobs,
+            vision_engine=vision_engine,
+            vision_model=os.getenv("FINSERVE_VISION_MODEL", VISION_MODEL),
+            vision_capacity=vision_capacity,
+        )
+    except BaseException:
+        if tracing is not None:
+            tracing.close()
+        raise

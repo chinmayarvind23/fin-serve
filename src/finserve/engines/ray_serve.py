@@ -14,6 +14,7 @@ from contextlib import aclosing
 from contextvars import Context
 from typing import Any, Literal, cast
 
+from opentelemetry.trace import NoOpTracer, Tracer
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.types import Receive, Scope, Send
@@ -22,6 +23,7 @@ from finserve.contracts.inference import EngineToken, InferenceRequest
 from finserve.contracts.routing import ReplicaSnapshot, RoutingRequest
 from finserve.scheduler.policy import RoutingPolicy
 from finserve.scheduler.router import ReplicaRouter, RoutingLease
+from finserve.telemetry.propagation import trace_headers, traced_stream
 
 
 class FixtureReplica:
@@ -37,8 +39,21 @@ class FixtureReplica:
         self._producers: dict[str, asyncio.Task[Any]] = {}
         self.completed = 0
         self.cancelled = 0
+        self.tracer: Tracer = NoOpTracer()
 
     async def generate(
+        self, payload: dict[str, Any], lease_id: str, traceparent: str | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Reconstitute private trace identity explicitly across the Ray actor boundary."""
+        async with aclosing(
+            traced_stream(
+                self._generate(payload, lease_id), self.tracer, "finserve.engine", traceparent
+            )
+        ) as output:
+            async for token in output:
+                yield token
+
+    async def _generate(
         self, payload: dict[str, Any], lease_id: str
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Keep ownership through every yielded token and remove it in all terminal paths."""
@@ -101,6 +116,7 @@ class RoutedFixture:
         self.handles: dict[str, Any] = {"fixture-a": first, "fixture-b": second}
         self.model = "fixture"
         self.router = ReplicaRouter(RoutingPolicy(mode=mode))
+        self.tracer: Tracer = NoOpTracer()
 
     async def _refresh_one(
         self, replica_id: str, handle: Any, shared_fields: dict[str, object] | None = None
@@ -166,7 +182,17 @@ class RoutedFixture:
                 await handle.retire.remote(lease.lease_id)
             self.router.release(lease)
 
-    async def generate(self, payload: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+    async def generate(
+        self, payload: dict[str, Any], traceparent: str | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Keep route span context out of callers while covering lease cleanup and RPC waits."""
+        async with aclosing(
+            traced_stream(self._generate(payload), self.tracer, "finserve.route", traceparent)
+        ) as output:
+            async for token in output:
+                yield token
+
+    async def _generate(self, payload: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
         """Route once, stream without retry, and drain cancellation before releasing admission."""
         request = InferenceRequest.model_validate(payload)
         deadline = time.monotonic() + request.timeout_seconds
@@ -189,7 +215,12 @@ class RoutedFixture:
             if remaining <= 0:
                 raise TimeoutError("routing request budget exceeded")
             payload = request.model_copy(update={"timeout_seconds": remaining}).model_dump()
-            result = handle.generate.remote(payload, lease.lease_id)
+            parent = trace_headers().get("traceparent")
+            result = (
+                handle.generate.remote(payload, lease.lease_id, parent)
+                if parent
+                else handle.generate.remote(payload, lease.lease_id)
+            )
             iterator = aiter(result)
             while True:
                 try:
@@ -225,11 +256,13 @@ class RoutedFixture:
         )
         return {"active_reservations": self.router.active_reservations, "workers": workers}
 
-    async def _http_lines(self, payload: dict[str, Any]) -> AsyncGenerator[str, None]:
+    async def _http_lines(
+        self, payload: dict[str, Any], traceparent: str | None = None
+    ) -> AsyncGenerator[str, None]:
         """Encode one JSON line per envelope; explicit generator closure propagates disconnects."""
         import json
 
-        output = self.generate(payload)
+        output = self.generate(payload, traceparent)
         try:
             async for envelope in output:
                 yield json.dumps(envelope) + "\n"
@@ -241,7 +274,9 @@ class RoutedFixture:
         if request.method == "GET":
             return JSONResponse(await self.status())
         payload = InferenceRequest.model_validate(await request.json()).model_dump()
-        return OwnedFixtureResponse(self._http_lines(payload))
+        parents = request.headers.getlist("traceparent")
+        parent = parents[0] if len(parents) == 1 else None
+        return OwnedFixtureResponse(self._http_lines(payload, parent))
 
 
 class OwnedFixtureResponse(StreamingResponse):
@@ -303,7 +338,12 @@ class RayServeEngine:
         """Cancel through the routing actor, which retains leases until worker acknowledgement."""
         if self._closed:
             raise RuntimeError("Ray engine adapter is closed")
-        result = self._handle.generate.remote(request.model_dump())
+        parent = trace_headers().get("traceparent")
+        result = (
+            self._handle.generate.remote(request.model_dump(), parent)
+            if parent
+            else self._handle.generate.remote(request.model_dump())
+        )
         try:
             async for envelope in result:
                 yield EngineToken.model_validate(envelope["token"])

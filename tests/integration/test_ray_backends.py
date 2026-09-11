@@ -23,6 +23,9 @@ from finserve.engines.ray_backends import (
     ServeOpenAIEngineReplica,
     build_application,
 )
+from finserve.engines.ray_http import RayHTTPEngine
+from finserve.gateway.app import create_app
+from finserve.telemetry.tracing import JsonSpanExporter, TraceRuntime
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("FINSERVE_RUN_RAY_INTEGRATION") != "1",
@@ -48,6 +51,7 @@ class BackendServer(ThreadingHTTPServer):
         self.completed = 0
         self.disconnected = 0
         self.requests = 0
+        self.traceparents: list[str | None] = []
 
     @property
     def endpoint(self) -> str:
@@ -105,6 +109,7 @@ class BackendHandler(BaseHTTPRequestHandler):
         with backend.lock:
             backend.active += 1
             backend.requests += 1
+            backend.traceparents.append(self.headers.get("traceparent"))
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Connection", "close")
@@ -139,13 +144,15 @@ class Runtime:
     backends: tuple[BackendServer, BackendServer]
     handle: Any
     url: str
+    trace_directory: Path
 
 
 @pytest.fixture(scope="module")
-def runtime() -> Generator[Runtime, None, None]:
+def runtime(tmp_path_factory: pytest.TempPathFactory) -> Generator[Runtime, None, None]:
     """Start two local HTTP fixtures and one isolated Ray cluster; never attach to another task."""
     ray = importlib.import_module("ray")
     serve = importlib.import_module("ray.serve")
+    trace_directory = tmp_path_factory.mktemp("ray-traces")
     backends = (BackendServer("a"), BackendServer("b"))
     threads = [threading.Thread(target=backend.serve_forever, daemon=True) for backend in backends]
     for thread in threads:
@@ -161,6 +168,12 @@ def runtime() -> Generator[Runtime, None, None]:
         log_to_driver=False,
         object_store_memory=128 * 1024 * 1024,
         namespace=f"finserve-http-bridge-{uuid4().hex}",
+        runtime_env={
+            "env_vars": {
+                "FINSERVE_TRACE_PATH": str(trace_directory / "ray.jsonl"),
+                "FINSERVE_TRACE_SAMPLE_RATIO": "1",
+            }
+        },
     )
     try:
         serve.start(http_options={"host": "127.0.0.1", "port": port})
@@ -175,7 +188,7 @@ def runtime() -> Generator[Runtime, None, None]:
             name="backend-pair",
             route_prefix="/backends",
         )
-        yield Runtime(serve, backends, handle, f"http://127.0.0.1:{port}/backends")
+        yield Runtime(serve, backends, handle, f"http://127.0.0.1:{port}/backends", trace_directory)
     finally:
         serve.shutdown()
         ray.shutdown()
@@ -198,6 +211,50 @@ async def wait_idle(runtime: Runtime) -> dict[str, Any]:
             return state
         await asyncio.sleep(0.05)
     raise AssertionError("HTTP/backend/router ownership did not drain")
+
+
+async def test_trace_links_gateway_ray_actors_and_engine_http(
+    runtime: Runtime, tmp_path: Path
+) -> None:
+    """Actual actor processes export a causal chain matching the downstream HTTP traceparent."""
+    trace_path = tmp_path / "gateway.jsonl"
+    tracing = TraceRuntime(JsonSpanExporter(trace_path), sample_ratio=1)
+    app = create_app(RayHTTPEngine(runtime.url), model=MODEL, tracing=tracing)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://gateway") as client,
+    ):
+        response = await client.post(
+            "/v1/completions",
+            json={"model": MODEL, "prompt": "private-trace-fixture", "max_tokens": 2},
+        )
+        assert response.status_code == 200 and "[DONE]" in response.text
+    root = json.loads(trace_path.read_text())
+    expected_trace = root["trace_id"]
+    rows: list[dict[str, Any]] = []
+    for _ in range(100):
+        rows = [
+            row
+            for path in runtime.trace_directory.glob("*.jsonl")
+            for line in path.read_text().splitlines()
+            for row in [json.loads(line)]
+            if row["trace_id"] == expected_trace
+        ]
+        if len(rows) >= 2:
+            break
+        await asyncio.sleep(0.05)
+    chain = {row["name"]: row for row in rows}
+    assert set(chain) == {"finserve.route", "finserve.engine"}
+    assert chain["finserve.route"]["parent_span_id"] == root["span_id"]
+    assert chain["finserve.engine"]["parent_span_id"] == chain["finserve.route"]["span_id"]
+    assert all(row["attributes"]["finserve.outcome"] == "success" for row in rows)
+    parents = [parent for backend in runtime.backends for parent in backend.traceparents if parent]
+    assert any(
+        parent.split("-")[1:3] == [expected_trace, chain["finserve.engine"]["span_id"]]
+        for parent in parents
+    )
+    assert "private-trace-fixture" not in json.dumps(rows)
+    await wait_idle(runtime)
 
 
 async def test_two_real_http_workers_route_streams_and_authoritative_usage(

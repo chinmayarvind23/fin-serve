@@ -207,8 +207,10 @@ class OpenAICompletionEngine:
             payload["messages"] = [message.model_dump() for message in request.messages]
             url, state = self._chat_url, ChatState(maximum_tokens=request.max_tokens)
         deadline = asyncio.get_running_loop().time() + request.timeout_seconds
+        from finserve.telemetry.propagation import trace_headers
+
         outbound = self._client.build_request(
-            "POST", url, json=payload, timeout=request.timeout_seconds
+            "POST", url, json=payload, timeout=request.timeout_seconds, headers=trace_headers()
         )
         try:
             async with asyncio.timeout_at(deadline):

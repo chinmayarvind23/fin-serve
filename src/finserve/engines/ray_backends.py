@@ -30,6 +30,7 @@ from finserve.engines.openai_adapter import OpenAICompletionEngine
 from finserve.engines.ray_serve import FixtureReplica, OwnedFixtureResponse, RoutedFixture
 from finserve.scheduler.policy import RoutingPolicy
 from finserve.scheduler.router import ReplicaRouter, RoutingLease
+from finserve.telemetry.tracing import from_env as tracing_from_env
 
 
 class BackendConfiguration(BaseModel):
@@ -95,6 +96,10 @@ class OpenAIEngineReplica(FixtureReplica):
         self._healthy = False
         self._checked_at: float | None = None
         self._close_task: asyncio.Task[None] | None = None
+        # A batch exporter owns a thread; allocate it after validating HTTP resources.
+        self.tracing = tracing_from_env(component="engine")
+        if self.tracing is not None:
+            self.tracer = self.tracing.tracer
 
     async def tokens(self, request: InferenceRequest) -> AsyncGenerator[EngineToken, None]:
         """Explicit closure propagates Ray cancellation through upstream HTTP."""
@@ -181,7 +186,11 @@ class OpenAIEngineReplica(FixtureReplica):
             try:
                 await self.engine.close()
             finally:
-                await self.probe.aclose()
+                try:
+                    await self.probe.aclose()
+                finally:
+                    if self.tracing is not None:
+                        await asyncio.to_thread(self.tracing.close)
 
 
 class ServeOpenAIEngineReplica(OpenAIEngineReplica):
@@ -205,6 +214,11 @@ class RoutedBackends(RoutedFixture):
         """One actor owns routing reservations; external engines scale separately."""
         self.handles, self.model = handles, model
         self.router = ReplicaRouter(RoutingPolicy(mode=mode))
+        from opentelemetry.trace import NoOpTracer
+
+        self.tracing = tracing_from_env(component="route")
+        self.tracer = self.tracing.tracer if self.tracing is not None else NoOpTracer()
+        self._close_task: asyncio.Task[None] | None = None
         self._api_key = os.getenv("FINSERVE_RAY_API_KEY")
         self.shared_gpu_uuid = shared_gpu_uuid
         self._gpu_sampler = SharedGpuSampler() if shared_gpu_uuid is not None else None
@@ -260,8 +274,23 @@ class RoutedBackends(RoutedFixture):
 
     async def close(self) -> None:
         """Drain only router-owned native sampling; engine process ownership stays external."""
-        if self._gpu_sampler is not None:
-            await self._gpu_sampler.close()
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close_resources())
+        while not self._close_task.done():
+            try:
+                await asyncio.shield(self._close_task)
+            except asyncio.CancelledError:
+                continue
+        self._close_task.result()
+
+    async def _close_resources(self) -> None:
+        """Exporter shutdown is native work; one retained task owns it through cancellation."""
+        try:
+            if self._gpu_sampler is not None:
+                await self._gpu_sampler.close()
+        finally:
+            if self.tracing is not None:
+                await asyncio.to_thread(self.tracing.close)
 
     async def __call__(self, request: Request) -> Response:
         """Bound the optional HTTP ingress before creating any lease or contacting an engine."""
@@ -291,7 +320,9 @@ class RoutedBackends(RoutedFixture):
             return JSONResponse({"detail": "request body timed out"}, status_code=408)
         except ValueError:
             return JSONResponse({"detail": "invalid inference request"}, status_code=422)
-        return OwnedFixtureResponse(self._http_lines(payload))
+        parents = request.headers.getlist("traceparent")
+        parent = parents[0] if len(parents) == 1 else None
+        return OwnedFixtureResponse(self._http_lines(payload, parent))
 
     async def read_snapshot(self, handle: Any) -> dict[str, Any]:
         """The engine heartbeat adds model discovery to current local lease counts."""

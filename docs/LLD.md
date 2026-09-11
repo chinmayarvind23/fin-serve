@@ -22,7 +22,7 @@ The source packages below are implemented. Runtime and acceptance limits are sep
 | `registry/{metadata,artifacts,lifecycle,release_gate,pipeline}.py` | Immutable SQL/CAS state and recomputed release decisions |
 | `registry/{annotations,explorer}.py` | Recomputed GPU/quality associations and bounded read-only GraphQL |
 | `reliability/{promotion,rollback,warm_routes}.py` | Performance/quality gates, rollback reconciliation and actual route CAS |
-| `telemetry/{metrics,tracing}.py` | Fixed-cardinality Prometheus collectors and bounded sampled OTel export |
+| `telemetry/{metrics,tracing,propagation}.py` | Fixed-cardinality metrics, private trace propagation and sanitized JSONL/OTLP export |
 
 ## Stream accounting and ownership
 
@@ -61,3 +61,5 @@ Client TTFT is send-to-first-nonempty-content on the client's clock. Server TTFT
 GPU utilization integrates sample-held physical-device observations over a declared epoch-mapped measured interval, caps stale gaps and reports coverage. Below 95% coverage, mean utilization is unknown. Multiple processes sharing one GPU do not increase the physical device count. Cost requires a declared price and billed/modelled time; local throughput alone cannot establish a cloud cost reduction.
 
 The quality grader distinguishes agreement with a reference from correctness against expected answers. A pair of identical wrong answers can have high parity. Missing/invalid structured outputs and exact-format failures remain explicit, and a bad result does not justify editing the frozen suite afterward.
+
+Trace context attaches only during generator execution, never across a consumer yield. Private Ray RPC arguments carry bounded W3C identity; the gateway starts a fresh root. Exporter configuration, queue/response bounds and native shutdown limitations are documented in [observability](observability.md). Actual CPU Ray actors and HTTP fixtures verify the causal parent chain; vLLM kernel spans and hosted ingestion remain separate work.

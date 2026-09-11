@@ -1,4 +1,4 @@
-﻿# FinServe
+# FinServe
 
 FinServe is a text and image inference platform with a reproducible measurement and release-control path. It connects a Bun edge, FastAPI, separately managed GPU engines, Ray routing and durable visual jobs. An evidence explorer puts throughput, latency, failed quality checks and exact artifact identities in the same view.
 
@@ -87,6 +87,6 @@ A real demo recording and GIF will be added after browser visual verification an
 
 **Product:** expand chart reasoning beyond three functional probes and improve exact-format correctness before accepting an optimized release.
 
-**Architecture:** complete artifact-bound runtime production, real multi-engine capacity experiments, cloud deployment and end-to-end tracing across the Ray/engine boundary.
+**Architecture:** complete artifact-bound runtime production, real multi-engine capacity experiments, cloud deployment and hosted observability. The text trace chain now passes actual Ray/HTTP integration checks.
 
 **Engineering:** repeat and randomize paired measurements, distinguish physical GPU telemetry from per-engine cache occupancy, measure real billed cost, and exercise node/process loss separately from warm route rollback. These remaining checks are tracked explicitly rather than inferred from passing unit tests.

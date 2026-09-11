@@ -1372,6 +1372,10 @@ registry = [
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
 ]
+telemetry = [
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "requests" },
+]
 vision = [
     { name = "pillow" },
 ]
@@ -1407,6 +1411,7 @@ requires-dist = [
     { name = "jinja2", marker = "extra == 'distributed'", specifier = ">=3.1.6,<4" },
     { name = "mlflow", marker = "extra == 'registry'", specifier = ">=3,<4" },
     { name = "opentelemetry-api", specifier = ">=1.30,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'telemetry'", specifier = ">=1.30,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.30,<2" },
     { name = "pillow", marker = "extra == 'multimodal'", specifier = ">=11,<13" },
     { name = "pillow", marker = "extra == 'vision'", specifier = ">=11,<13" },
@@ -1417,12 +1422,13 @@ requires-dist = [
     { name = "ray", extras = ["serve"], marker = "extra == 'distributed'", specifier = ">=2.40,<3" },
     { name = "redis", marker = "extra == 'cache'", specifier = ">=5,<7" },
     { name = "redis", marker = "extra == 'distributed'", specifier = ">=5,<7" },
+    { name = "requests", marker = "extra == 'telemetry'", specifier = ">=2.32,<3" },
     { name = "sqlalchemy", marker = "extra == 'explorer'", specifier = ">=2,<3" },
     { name = "sqlalchemy", marker = "extra == 'registry'", specifier = ">=2,<3" },
     { name = "torch", marker = "extra == 'reference'", specifier = ">=2.6,<3" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
-provides-extras = ["reference", "cache", "distributed", "registry", "multimodal", "vision", "explorer", "visual-worker", "visual-proto", "orchestration"]
+provides-extras = ["reference", "cache", "distributed", "registry", "multimodal", "vision", "explorer", "telemetry", "visual-worker", "visual-proto", "orchestration"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3402,7 +3408,7 @@ name = "opentelemetry-exporter-otlp-proto-common"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-proto", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "opentelemetry-proto" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/61/09/4d717852c1cf3f854b76c7110a5d00883bc3c99288b9b0dbcbeb9e306eb6/opentelemetry_exporter_otlp_proto_common-1.44.0.tar.gz", hash = "sha256:dc87a5a5bc58f149a56d1547e4691588fa12994cdc3bc039a694ccb3375862ac", size = 20202, upload-time = "2026-07-16T15:25:37.658Z" }
 wheels = [
@@ -3432,13 +3438,13 @@ name = "opentelemetry-exporter-otlp-proto-http"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "googleapis-common-protos", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "opentelemetry-api", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "opentelemetry-exporter-otlp-proto-common", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "opentelemetry-proto", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "opentelemetry-sdk", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "requests", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "googleapis-common-protos" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-common" },
+    { name = "opentelemetry-proto" },
+    { name = "opentelemetry-sdk" },
+    { name = "requests" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1a/87/95e2a5aaa795b4e2260d74e16df2d5541deb2ea9de010bcd615f4dee2654/opentelemetry_exporter_otlp_proto_http-1.44.0.tar.gz", hash = "sha256:c633d7270ad6b57cd4cfbe8b0007a9e2e7c0cb50bd6c50fe2a7b245f721a09d8", size = 25806, upload-time = "2026-07-16T15:25:39.162Z" }
 wheels = [
