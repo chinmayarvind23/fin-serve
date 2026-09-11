@@ -70,7 +70,7 @@ class BackendHandler(BaseHTTPRequestHandler):
         if self.path == "/metrics":
             body = (
                 "".join(
-                    f'# TYPE vllm:{name} gauge\n'
+                    f"# TYPE vllm:{name} gauge\n"
                     f'vllm:{name}{{model_name="{backend.model}"}} {value}\n'
                     for name, value in (
                         ("num_requests_running", backend.active),
