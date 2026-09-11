@@ -77,6 +77,14 @@ Correctness still failed. Remaining outputs include `0.20` where exact `0.2` was
 
 An initial client startup failed with `ENOMEM`. The collector reconciled the same owned container and original start identity before collecting all 56 responses. The retained container state reports `OOMKilled=false`; the client error is not evidence of a container or GPU OOM. Before/after runtime observations, raw responses, grades and the exact stop receipt are retained. The owned container was stopped and removed. Reconciliation duration is not a cold-start measurement.
 
+## Structured-output diagnostic startup failure
+
+`structured-quality-arm-01` froze 51 prompt-derived format constraints and five explicit unconstrained requests across the same 56 consumed cases. Independent review checked that constraints specify broad output shapes without expected answer values. The suites, grading thresholds and chat instruction stayed unchanged. Source `fbdfc211a02ea7f341b1a7fa6281164dc01c8215` produced image `sha256:0628626ea7a7f70ff220c13a0ce2f5ff739c0287fdab4a442d555b0e526e0b59`; the runtime explicitly selected xgrammar.
+
+The engine exited before readiness, so this attempt produced **zero quality requests and no correctness result**. vLLM reported 2.98 GiB for model loading and a negative 2.54 GiB available KV-cache budget at GPU memory fraction 0.45. Docker reported exit code 1 and `OOMKilled=false`. The GPU was idle at preflight, but a later observation found an Ollama workload with total device usage of 6,083 MiB and 90% utilization. That observation makes shared-device interference a possible explanation; it does not isolate the cause.
+
+The failed container's inspection and complete logs were retained before its exact identity was removed. No larger-memory retry ran while the competing workload was active. The input review and successful image build verify preparation only; structured generation, correctness and compilation overhead remain unmeasured in this arm.
+
 ## Multimodal evidence
 
 Pinned Qwen2-VL-2B-Instruct revision `895c3a49bc3fa70a340399125c650a463535e71c` runs through the actual image/text adapter. The final uniform-color preprocessing comparison retained 36 successful requests and 18/18 exact local/HTTP output pairs, but 0/36 correct color answers. The rejected semantic result remains in `vision-stage-run-03-final`; earlier fp16 and bf16 cohorts also remain.
