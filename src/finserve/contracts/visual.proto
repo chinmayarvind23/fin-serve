@@ -1,0 +1,45 @@
+syntax = "proto3";
+package finserve.visual.v1;
+
+// Fixed RGB bytes avoid lossy JSON numbers at the process boundary.
+message GenerateRequest {
+  string job_id = 1;
+  uint64 generation = 2;
+  bytes image_rgb = 3;
+  string model_revision = 4;
+  uint32 seed = 5;
+  double timeout_seconds = 6;
+}
+message Admitted { string worker_instance = 1; }
+message Artifact {
+  bytes png = 1;
+  string sha256 = 2;
+  string model_sha256 = 3;
+  uint64 initialization_ns = 4;
+  uint64 generation_ns = 5;
+  uint64 rendering_ns = 6;
+}
+message Failure { string code = 1; }
+message VisualEvent {
+  uint32 sequence = 1;
+  oneof payload {
+    Admitted admitted = 2;
+    Artifact artifact = 3;
+    Failure failure = 4;
+  }
+}
+message AttemptRequest {
+  string job_id = 1;
+  uint64 generation = 2;
+  string worker_instance = 3;
+}
+message AttemptStatus {
+  string worker_instance = 1;
+  // unknown differs from drained, especially after worker process restart.
+  string state = 2;
+}
+service VisualWorker {
+  rpc GenerateVisual(GenerateRequest) returns (stream VisualEvent);
+  // A barrier that revokes starts and waits for any native generation to drain.
+  rpc CancelAttempt(AttemptRequest) returns (AttemptStatus);
+}
