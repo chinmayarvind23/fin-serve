@@ -1,0 +1,274 @@
+{
+  "audit_source_sha256": "817540b1e257e785a72a7ce374534adb8af36461541a2857e1c4f82582e90639",
+  "frontiers": {
+    "client_ttft_median_s": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "e2e_p95_s": [
+      1,
+      16
+    ]
+  },
+  "limitations": [
+    "Single sequential development cell per concurrency; no uncertainty bands.",
+    "Dirty trees recorded; no exact archived dirty source or runtime image digest.",
+    "Explicit reviewed untracked runtime exclusions do not attest excluded file bytes.",
+    "Fixed engine sequence/token limits; actual internal batch shapes unobserved.",
+    "Latency uses successful requests; warmups excluded from measured denominator.",
+    "Separate correctness failure prevents a release or useful-quality optimum claim.",
+    "No sustained, speculation, different-engine or changed-population cells pooled."
+  ],
+  "quality_context": {
+    "candidate_accuracy": 0.3125,
+    "case_count": 32,
+    "evaluator_sha256": "f6dc983bc496112e9126bd4d96b8f4e84ffadf62317d569c5a4ffdd00bac1639",
+    "name": "quality-compiled-02",
+    "passed": false,
+    "run_id": "ccf15afa-04f1-48b3-9394-786cef57b349",
+    "scope": "Separate same-profile correctness; no concurrency-specific quality estimate",
+    "source_revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+    "suite_hash": "998b1f5dd448c2dffe247bc6fe89b5251699fb1b3fc170dc0fb427662706b463"
+  },
+  "runs": [
+    {
+      "configuration": {
+        "cache_policy": "prefix-cache-disabled",
+        "concurrency": 1,
+        "config_digest": "undeclared",
+        "engine": "vllm0.29.0",
+        "engine_config": "compiled-seq16-batch2048-context2048-memory0.70-prefixoff-V1-native-sampler",
+        "hardware": "RTX4070-Laptop-8188MiB-WSL2",
+        "image_digest": "undeclared",
+        "mode": "closed",
+        "model": "finserve-qwen",
+        "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "rate": 10.0,
+        "requests": 256,
+        "revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "timeout_s": 30.0,
+        "tokenizer_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "warmup": 16
+      },
+      "created_at": "2026-09-11T06:35:33.131413+00:00",
+      "dirty": true,
+      "name": "compiled-load-c1-01",
+      "raw_records_sha256": "c40dca8b9dc78afba63938138464b8397c8301d8c9b889805f84d712770e3a52",
+      "reviewed_untracked_runtime_exclusions": [
+        "src/finserve/multimodal/jax_generator.py",
+        "src/finserve/registry/__init__.py",
+        "src/finserve/registry/artifacts.py"
+      ],
+      "run_id": "37454aa0-a522-44a8-bc2d-1b64094d8280",
+      "source_provenance": {
+        "actual_revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "declared_revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "revision_difference_paths": [],
+        "revision_matches": true,
+        "tracked_runtime": {
+          "pyproject.toml": "05c6fbe7867bb86f9dfebd26e5d9a6ca3c1508e2",
+          "src": "bf37f897011e0a0065df522f96035cf762133bf5",
+          "uv.lock": "8e5879e492838e9b8c5a609ea8a1e497882c3444"
+        }
+      },
+      "summary": {
+        "client_ttft_median_s": 0.048957850000078906,
+        "e2e_p95_s": 0.35994157499999346,
+        "failed_requests": 0,
+        "generated_tokens": 7428,
+        "measured_seconds": 55.75354510000034,
+        "offered_requests": 256,
+        "requests_per_second": 4.591636272470833,
+        "successful_requests": 256,
+        "tokens_per_second": 133.2291962184115
+      },
+      "untracked_runtime_bytes_attested": false,
+      "warmup_records": 16,
+      "workload_hash": "ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54"
+    },
+    {
+      "configuration": {
+        "cache_policy": "prefix-cache-disabled",
+        "concurrency": 4,
+        "config_digest": "undeclared",
+        "engine": "vllm0.29.0",
+        "engine_config": "compiled-seq16-batch2048-context2048-memory0.70-prefixoff-V1-native-sampler",
+        "hardware": "RTX4070-Laptop-8188MiB-WSL2",
+        "image_digest": "undeclared",
+        "mode": "closed",
+        "model": "finserve-qwen",
+        "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "rate": 10.0,
+        "requests": 256,
+        "revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "timeout_s": 30.0,
+        "tokenizer_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "warmup": 16
+      },
+      "created_at": "2026-09-11T06:36:34.162235+00:00",
+      "dirty": true,
+      "name": "compiled-load-c4-01",
+      "raw_records_sha256": "20f7bce62c9b0dc2d5f91d0a6ef5f0316633d6cfcf6d10ae85800c48d18ebe61",
+      "reviewed_untracked_runtime_exclusions": [
+        "src/finserve/multimodal/jax_generator.py",
+        "src/finserve/registry/__init__.py",
+        "src/finserve/registry/artifacts.py"
+      ],
+      "run_id": "8beb35ef-c034-4c03-b81e-bb6c67cf719d",
+      "source_provenance": {
+        "actual_revision": "231acc3431623d26c29be9b0e1df7270776a908f",
+        "declared_revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "revision_difference_paths": [
+          "evals/golden/correctness-32-v1.json",
+          "scripts/freeze_quality_suite.py",
+          "scripts/run_quality.py",
+          "tests/unit/test_quality_runner.py"
+        ],
+        "revision_matches": false,
+        "tracked_runtime": {
+          "pyproject.toml": "05c6fbe7867bb86f9dfebd26e5d9a6ca3c1508e2",
+          "src": "bf37f897011e0a0065df522f96035cf762133bf5",
+          "uv.lock": "8e5879e492838e9b8c5a609ea8a1e497882c3444"
+        }
+      },
+      "summary": {
+        "client_ttft_median_s": 0.10995800000046074,
+        "e2e_p95_s": 0.659244924999939,
+        "failed_requests": 0,
+        "generated_tokens": 7346,
+        "measured_seconds": 26.346169999999802,
+        "offered_requests": 256,
+        "requests_per_second": 9.716782363432785,
+        "successful_requests": 256,
+        "tokens_per_second": 278.82610641319235
+      },
+      "untracked_runtime_bytes_attested": false,
+      "warmup_records": 16,
+      "workload_hash": "ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54"
+    },
+    {
+      "configuration": {
+        "cache_policy": "prefix-cache-disabled",
+        "concurrency": 8,
+        "config_digest": "undeclared",
+        "engine": "vllm0.29.0",
+        "engine_config": "compiled-seq16-batch2048-context2048-memory0.70-prefixoff-V1-native-sampler",
+        "hardware": "RTX4070-Laptop-8188MiB-WSL2",
+        "image_digest": "undeclared",
+        "mode": "closed",
+        "model": "finserve-qwen",
+        "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "rate": 10.0,
+        "requests": 256,
+        "revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "timeout_s": 30.0,
+        "tokenizer_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "warmup": 16
+      },
+      "created_at": "2026-09-11T06:37:04.031161+00:00",
+      "dirty": true,
+      "name": "compiled-load-c8-01",
+      "raw_records_sha256": "3b1217c1b5ef65e3bb613cb253f8e133afd6fde91ac4b33c57cf62265d4ab889",
+      "reviewed_untracked_runtime_exclusions": [
+        "src/finserve/multimodal/jax_generator.py",
+        "src/finserve/registry/__init__.py",
+        "src/finserve/registry/artifacts.py"
+      ],
+      "run_id": "a20137a9-0583-4cc8-a4d3-741a24379f34",
+      "source_provenance": {
+        "actual_revision": "231acc3431623d26c29be9b0e1df7270776a908f",
+        "declared_revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "revision_difference_paths": [
+          "evals/golden/correctness-32-v1.json",
+          "scripts/freeze_quality_suite.py",
+          "scripts/run_quality.py",
+          "tests/unit/test_quality_runner.py"
+        ],
+        "revision_matches": false,
+        "tracked_runtime": {
+          "pyproject.toml": "05c6fbe7867bb86f9dfebd26e5d9a6ca3c1508e2",
+          "src": "bf37f897011e0a0065df522f96035cf762133bf5",
+          "uv.lock": "8e5879e492838e9b8c5a609ea8a1e497882c3444"
+        }
+      },
+      "summary": {
+        "client_ttft_median_s": 0.12047665000000052,
+        "e2e_p95_s": 0.820813099999441,
+        "failed_requests": 0,
+        "generated_tokens": 7279,
+        "measured_seconds": 14.670449600000211,
+        "offered_requests": 256,
+        "requests_per_second": 17.450044612129428,
+        "successful_requests": 256,
+        "tokens_per_second": 496.16747942066445
+      },
+      "untracked_runtime_bytes_attested": false,
+      "warmup_records": 16,
+      "workload_hash": "ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54"
+    },
+    {
+      "configuration": {
+        "cache_policy": "prefix-cache-disabled",
+        "concurrency": 16,
+        "config_digest": "undeclared",
+        "engine": "vllm0.29.0",
+        "engine_config": "compiled-seq16-batch2048-context2048-memory0.70-prefixoff-V1-native-sampler",
+        "hardware": "RTX4070-Laptop-8188MiB-WSL2",
+        "image_digest": "undeclared",
+        "mode": "closed",
+        "model": "finserve-qwen",
+        "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "rate": 10.0,
+        "requests": 256,
+        "revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "timeout_s": 30.0,
+        "tokenizer_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+        "warmup": 16
+      },
+      "created_at": "2026-09-11T06:37:20.719137+00:00",
+      "dirty": true,
+      "name": "compiled-load-c16-01",
+      "raw_records_sha256": "f4bd6d4d18f843011abb01260b24cb2e4fa15d247422bbee65ced808048f391e",
+      "reviewed_untracked_runtime_exclusions": [
+        "src/finserve/multimodal/jax_generator.py",
+        "src/finserve/registry/__init__.py",
+        "src/finserve/registry/artifacts.py"
+      ],
+      "run_id": "5c3fb499-04a6-46cf-9e67-c8cefbcbf348",
+      "source_provenance": {
+        "actual_revision": "231acc3431623d26c29be9b0e1df7270776a908f",
+        "declared_revision": "a2482561fdf833c7d21414cea3ab445269ae2f50",
+        "revision_difference_paths": [
+          "evals/golden/correctness-32-v1.json",
+          "scripts/freeze_quality_suite.py",
+          "scripts/run_quality.py",
+          "tests/unit/test_quality_runner.py"
+        ],
+        "revision_matches": false,
+        "tracked_runtime": {
+          "pyproject.toml": "05c6fbe7867bb86f9dfebd26e5d9a6ca3c1508e2",
+          "src": "bf37f897011e0a0065df522f96035cf762133bf5",
+          "uv.lock": "8e5879e492838e9b8c5a609ea8a1e497882c3444"
+        }
+      },
+      "summary": {
+        "client_ttft_median_s": 0.1310203999996702,
+        "e2e_p95_s": 0.5326627000001736,
+        "failed_requests": 0,
+        "generated_tokens": 7276,
+        "measured_seconds": 6.35377840000001,
+        "offered_requests": 256,
+        "requests_per_second": 40.29098654117361,
+        "successful_requests": 256,
+        "tokens_per_second": 1145.1453830999187
+      },
+      "untracked_runtime_bytes_attested": false,
+      "warmup_records": 16,
+      "workload_hash": "ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54"
+    }
+  ],
+  "schema": "finserve-concurrency-frontier-v1",
+  "source_audit_sha256": "cededeca6608253640c4fd40646e22359d68fdc59f95c240214a814b153a08a7"
+}

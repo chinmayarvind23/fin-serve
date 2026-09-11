@@ -12,6 +12,24 @@ The first two-engine routing comparison used two actual vLLM processes on one ph
 
 The original targets, including 94 requests/s, improved TTFT, 99.2% quality parity, 81% mean GPU utilization and 37% lower GPU cost, remain unachieved or unmeasured. Local observations contain no cloud invoice or production availability window.
 
+## Fixed-profile concurrency observations
+
+![Audited development concurrency tradeoffs with explicit failed quality context](assets/concurrency-frontier.png)
+
+The four compiled development cells used the same 64-case workload repeated four times, 256 measured requests and 16 separate warmups. Only declared client concurrency varied: 1, 4, 8 and 16. Native sequence capacity stayed at 16 and the token/context limits at 2,048; prefix caching and speculation were disabled. These observations characterize admission concurrency under fixed batch limits. They do not measure actual internal batch shapes or isolate a batching-algorithm change.
+
+All 1,024 measured requests completed. The observed TTFT/throughput frontier contains all four points; for p95 completion latency, c4 and c8 are dominated by c16 in this sample. Each point is one short, sequential development run, lasting 55.75, 26.35, 14.67 and 6.35 seconds. There are no repeat-based uncertainty estimates. The separate same-profile 32-case quality cohort achieved 31.25% correctness and failed its gate; quality was not measured independently at every concurrency.
+
+Provenance remains qualified. The c1 environment records source `a2482561fdf833c7d21414cea3ab445269ae2f50`; c4/c8/c16 record `231acc3431623d26c29be9b0e1df7270776a908f` while still declaring the earlier revision. Git tree/blob identities confirm identical tracked `src`, `uv.lock` and `pyproject.toml`; the intervening commit added only quality-suite tooling. Each run also lists three reviewed untracked runtime files: `multimodal/jax_generator.py`, `registry/__init__.py` and `registry/artifacts.py` under `src/finserve`. Their bytes were not archived. The audit requires an explicit exact-path exclusion for each; tracked modifications and unknown untracked runtime paths still reject. No exact dirty-source archive or native image/config digest exists for these runs.
+
+The [aggregate data](assets/concurrency-frontier.json) includes run IDs, raw-record hashes, durations, authoritative output counts, both source identities and the untracked-file exclusions. The [SVG](assets/concurrency-frontier.svg) is available for export. Recompute a fresh external audit with [audit_concurrency_frontier.py](../scripts/audit_concurrency_frontier.py), passing the four `compiled-load-c{1,4,8,16}-01` directories and `quality-compiled-02`. Supply `--allow-untracked-runtime` once for each full reviewed path above. The checkout must contain Git objects for both recorded revisions; the installed evaluator must match the recorded hash, allowing only LF/CRLF normalization. Render that audit with:
+
+```sh
+uv run --script scripts/plot_concurrency_frontier.py --audit "$FINSERVE_FRONTIER_AUDIT" --output "$FINSERVE_NEW_FIGURE_DIRECTORY"
+```
+
+The 128-request engine comparisons, n-gram profiles, 3,072-request sustained runs and two-engine routing workload remain separate experiments. A common workload hash alone does not make their repetition counts, runtimes or serving boundaries interchangeable.
+
 ## Experiment discipline
 
 Freeze revisions, inputs, seed/order, output budgets, concurrency, warmup and acceptance criteria before measurement. Record actual source and launch identity. A copied profile is a declaration; model discovery, process identity and observed hardware supply separate evidence. A later container build cannot retrospectively identify an unrecorded native-run image digest.
