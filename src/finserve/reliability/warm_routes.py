@@ -108,6 +108,8 @@ class WarmRouteStore:
                     fingerprint TEXT NOT NULL,payload TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS warm_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     deployment_id TEXT NOT NULL,payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS warm_retirements(id TEXT PRIMARY KEY,
+                    digest TEXT NOT NULL);
             """)
 
     @contextmanager
@@ -129,6 +131,7 @@ class WarmRouteStore:
     def register(self, backend: WarmBackend) -> None:
         """Bound registered endpoints and forbid revision reuse with changed configuration."""
         with self.transaction() as connection:
+            self._require_available(connection, backend.revision.revision_id)
             found: tuple[str] | None = connection.execute(
                 "SELECT payload FROM warm_backends WHERE id=?", (backend.revision.revision_id,)
             ).fetchone()
@@ -136,7 +139,10 @@ class WarmRouteStore:
                 if WarmBackend.model_validate_json(found[0]) != backend:
                     raise ControlConflict("backend revision is immutable")
                 return
-            count: tuple[int] = connection.execute("SELECT COUNT(*) FROM warm_backends").fetchone()
+            count: tuple[int] = connection.execute(
+                "SELECT COUNT(*) FROM warm_backends "
+                "WHERE id NOT IN (SELECT id FROM warm_retirements)"
+            ).fetchone()
             if count[0] >= 32:
                 raise ControlConflict("warm backend registry limit reached")
             try:
@@ -154,12 +160,86 @@ class WarmRouteStore:
     def backend(self, revision_id: str) -> WarmBackend:
         """Resolve only a pre-registered endpoint; request payloads cannot supply destinations."""
         with self.transaction() as connection:
+            self._require_available(connection, revision_id)
             row: tuple[str] | None = connection.execute(
                 "SELECT payload FROM warm_backends WHERE id=?", (revision_id,)
             ).fetchone()
         if row is None:
             raise KeyError("warm backend not registered")
         return WarmBackend.model_validate_json(row[0])
+
+    def _require_available(self, connection: sqlite3.Connection, revision_id: str) -> None:
+        """A retired producer revision cannot become traffic after cleanup has been authorized."""
+        if connection.execute(
+            "SELECT 1 FROM warm_retirements WHERE id=?", (revision_id,)
+        ).fetchone():
+            raise ControlConflict("backend revision is retired")
+
+    def retire_unserved(self, control: DeploymentStore, backend: WarmBackend) -> bool:
+        """Fence never-served revisions before stopping their exact producer runtime.
+
+        Historical routes remain protected because pinned in-flight requests have no durable
+        drain receipt. Route->control lock order prevents activation racing this decision.
+        """
+        if self.path == control.path:
+            raise ValueError("route and control stores require separate database files")
+        revision = backend.revision
+        with self.transaction() as connection, control.transaction() as controller:
+            for (payload,) in connection.execute("SELECT payload FROM warm_events"):
+                if RouteSnapshot.model_validate_json(payload).revision_id == revision.revision_id:
+                    return False
+            for (payload,) in controller.execute("SELECT payload FROM deployments"):
+                state = DeploymentState.model_validate_json(payload)
+                if revision.revision_id in {state.active_revision, state.known_good_revision}:
+                    return False
+            registered: tuple[str] | None = connection.execute(
+                "SELECT payload FROM warm_backends WHERE id=?", (revision.revision_id,)
+            ).fetchone()
+            if registered is not None and WarmBackend.model_validate_json(registered[0]) != backend:
+                raise ControlConflict("retirement differs from registered backend")
+            if registered is None:
+                try:
+                    connection.execute(
+                        "INSERT INTO warm_backends VALUES(?,?,?)",
+                        (
+                            revision.revision_id,
+                            backend.configuration.base_url,
+                            backend.model_dump_json(),
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    raise ControlConflict(
+                        "cleanup endpoint is reserved by another revision"
+                    ) from None
+            prior: tuple[str] | None = connection.execute(
+                "SELECT digest FROM warm_retirements WHERE id=?", (revision.revision_id,)
+            ).fetchone()
+            if prior is not None and prior[0] != revision.digest():
+                raise ControlConflict("retirement revision identity changed")
+            connection.execute(
+                "INSERT OR IGNORE INTO warm_retirements VALUES(?,?)",
+                (revision.revision_id, revision.digest()),
+            )
+            return True
+
+    def release_retired_endpoint(self, backend: WarmBackend) -> None:
+        """After exact stop verification, release only this retired revision's endpoint slot."""
+        with self.transaction() as connection:
+            row: tuple[str, str] | None = connection.execute(
+                "SELECT b.payload,r.digest FROM warm_backends b JOIN warm_retirements r "
+                "ON b.id=r.id WHERE b.id=?",
+                (backend.revision.revision_id,),
+            ).fetchone()
+            if (
+                row is None
+                or WarmBackend.model_validate_json(row[0]) != backend
+                or row[1] != backend.revision.digest()
+            ):
+                raise ControlConflict("endpoint release differs from retired backend")
+            connection.execute(
+                "UPDATE warm_backends SET base_url=? WHERE id=?",
+                ("retired:" + backend.revision.revision_id, backend.revision.revision_id),
+            )
 
     def snapshot(self, deployment_id: str) -> RouteSnapshot:
         """Read one coherent active route; historical revision identity never comes from a cache."""
@@ -191,6 +271,7 @@ class WarmRouteStore:
         """Select the initial route; real traffic must subsequently verify readiness."""
         backend = self.backend(revision_id)
         with self.transaction() as connection:
+            self._require_available(connection, revision_id)
             try:
                 existing = self._snapshot(connection, deployment_id)
             except KeyError:
@@ -216,6 +297,7 @@ class WarmRouteStore:
             raise ControlConflict("unregistered target identity or empty action key")
         fingerprint = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
         with self.transaction() as connection:
+            self._require_available(connection, request.target.revision_id)
             receipt: tuple[str, str] | None = connection.execute(
                 "SELECT fingerprint,payload FROM warm_actions WHERE id=?",
                 (request.idempotency_key,),

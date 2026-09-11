@@ -31,6 +31,15 @@ The source packages below are implemented. Runtime and acceptance limits are sep
 
 ## Stream accounting and ownership
 
+Producer failure cleanup uses immutable launch and build receipts, so damaged model files do
+not prevent stopping an exactly identified owned process. It retires only revisions that have
+never served a warm route and are absent from every controller's active and known-good targets.
+The retirement transaction locks routes before controller state and fences subsequent route
+writes. The endpoint remains reserved until exact process stop is verified; only then can a
+new revision reuse it. Retired identities and their original receipts remain immutable.
+Previously served revisions remain protected because the gateway has no durable proof that
+all pinned streams have drained. Incomplete launch attempts require reconciliation.
+
 SSE frames are transport envelopes, not tokens. The adapter accumulates visible output while a state machine validates one supported finish reason, authoritative usage and the terminal completion marker. A missing or malformed terminal sequence fails. The Ray bridge uses newline-delimited JSON and withholds terminal success until complete EOF; another replica cannot take over an already visible response.
 
 The response object and generator share an idempotent lease. Header failure can occur before the generator starts, so generator-finally cleanup alone is insufficient. Response cleanup explicitly closes the iterator and releases the lease. Native work offloaded to a thread is drained before returning its capacity, because task cancellation cannot stop an executing kernel or image decoder.

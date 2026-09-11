@@ -1,5 +1,6 @@
 """Run producer task dispatch through actual collectors with explicit synthetic build scope."""
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -22,6 +23,7 @@ from finserve.registry.producer_runtime import (
     ProducerEngine,
     ProducerInput,
     ProducerStep,
+    cleanup_unserved,
     freeze_producer,
     prepared_cohorts,
     produce_step,
@@ -30,6 +32,8 @@ from finserve.registry.producer_stages import ProducerStages
 from finserve.registry.release_gate import evaluate_gate
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage
 from finserve.reliability.promotion import PromotionPolicy
+from finserve.reliability.rollback import DeploymentStore
+from finserve.reliability.warm_routes import WarmRouteStore
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
@@ -109,6 +113,9 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             def inspection(self, attempt: str, directory: Path) -> dict[str, Any]:
                 """Retain existing ownership fields and report this cohort's declared listener."""
                 result = super().inspection(attempt, directory)
+                result["Id"] = (
+                    "e" if self.spec.revision.revision_id.endswith("baseline") else "f"
+                ) * 64
                 port = "9000" if self.spec.revision.revision_id.endswith("baseline") else "9001"
                 result["HostConfig"]["PortBindings"] = {
                     "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": port}]
@@ -137,8 +144,10 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                 plan.candidate.performance.revision.image_digest
                 == template.image.image_manifest_digest
             )
+            daemons: dict[str, CohortDaemon] = {}
             for name, runtime_spec in zip(("baseline", "candidate"), runtimes, strict=True):
-                runtime = DockerRuntime(CohortDaemon(runtime_spec))
+                daemons[name] = CohortDaemon(runtime_spec)
+                runtime = DockerRuntime(daemons[name])
                 for action in ("launch", "quality", "performance"):
                     await produce_step(
                         journal, spec.job_id, cast(ProducerStep, name + "_" + action), http, runtime
@@ -148,5 +157,27 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             assert register_produced_release(journal, spec.job_id + ":release-plan") == spec.job_id
             assert evaluate_gate(registry, journal.artifacts, spec.job_id).status == "rejected"
             assert calls == before
+
+            def cleanup_command(
+                arguments: list[str], directory: Path, output: Path, timeout: float
+            ) -> None:
+                """Dispatch independently identified fixture containers by owned directory."""
+                name = "baseline" if "baseline" in directory.parts else "candidate"
+                daemons[name](arguments, directory, output, timeout)
+
+            routes = WarmRouteStore(tmp_path / "routes.sqlite")
+            control = DeploymentStore(tmp_path / "control.sqlite")
+            await asyncio.to_thread((runtimes[0].model_directory / "config.json").unlink)
+            cleaned = await cleanup_unserved(
+                journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)
+            )
+            assert cleaned == {"baseline": "stopped", "candidate": "stopped"}
+            assert all(daemon.container is None for daemon in daemons.values())
+            assert (
+                await cleanup_unserved(
+                    journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)
+                )
+                == cleaned
+            )
     finally:
         registry.close()

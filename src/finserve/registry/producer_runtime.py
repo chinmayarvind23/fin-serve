@@ -1,6 +1,7 @@
 """Server-owned task runtime deriving collection identities from actual model and image receipts."""
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Literal, Self, get_args
 
@@ -34,8 +35,10 @@ from finserve.registry.producer_tasks import (
     verified_model_receipt,
 )
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage
-from finserve.registry.runtime_stages import launch_runtime_stage
+from finserve.registry.runtime_stages import launch_runtime_stage, load_launch, stop_runtime_stage
 from finserve.reliability.promotion import PromotionPolicy
+from finserve.reliability.rollback import DeploymentStore
+from finserve.reliability.warm_routes import BackendConfiguration, WarmBackend, WarmRouteStore
 
 
 class ProducerEngine(ImmutableModel):
@@ -316,3 +319,79 @@ async def produce_step(
     else:
         raise ValueError("unsupported producer action")
     return job_id
+
+
+async def cleanup_unserved(
+    journal: ProducerStages,
+    job_id: str,
+    routes: WarmRouteStore,
+    control: DeploymentStore,
+    runtime: DockerRuntime,
+) -> dict[str, str]:
+    """Retire unused revisions before exact receipt-bound cleanup; preserve ambiguous launches."""
+    spec = await owned_disk(lambda: producer_input(journal, job_id))
+    launch_ids = [job_id + ":" + name + "-launch" for name in ("baseline", "candidate")]
+    histories = [await owned_disk(lambda key=key: journal.history(key)) for key in launch_ids]
+    if not any(histories):
+        return {"baseline": "not_launched", "candidate": "not_launched"}
+    outcomes: dict[str, str] = {}
+    for name, launch_id, history in zip(
+        ("baseline", "candidate"), launch_ids, histories, strict=True
+    ):
+        if not history:
+            outcomes[name] = "not_launched"
+            continue
+        state = await owned_disk(partial(journal.state, launch_id))
+        if state.status != "completed":
+            outcomes[name] = "needs_reconciliation"
+            continue
+        launch_spec = await owned_disk(partial(cleanup_launch, journal, spec, name, launch_id))
+        backend = WarmBackend(
+            revision=launch_spec.revision,
+            serving_profile=launch_spec.profile,
+            configuration=BackendConfiguration(
+                base_url=launch_spec.profile.base_url, model=launch_spec.profile.served_model
+            ),
+        )
+        retired = await owned_disk(partial(routes.retire_unserved, control, backend))
+        if not retired:
+            outcomes[name] = "preserved_for_traffic"
+            continue
+        await stop_runtime_stage(
+            journal, job_id + ":" + name + "-cleanup", launch_id, launch_spec, runtime
+        )
+        await owned_disk(partial(routes.release_retired_endpoint, backend))
+        outcomes[name] = "stopped"
+    return outcomes
+
+
+def cleanup_launch(
+    journal: ProducerStages,
+    spec: ProducerInput,
+    name: str,
+    launch_id: str,
+) -> RuntimeLaunchSpec:
+    """Validate immutable launch/build linkage even when the live model volume is damaged."""
+    state = journal.state(launch_id)
+    frozen = json.loads(journal.artifacts.get(state.input))
+    launch = RuntimeLaunchSpec.model_validate(frozen["specification"])
+    load_launch(journal, state, launch)
+    build = journal.state(spec.job_id + ":build")
+    if build.status != "completed" or build.output is None:
+        raise ValueError("cleanup requires the completed immutable build receipt")
+    image = RuntimeImage.model_validate_json(journal.artifacts.get(build.output))
+    engine = spec.baseline if name == "baseline" else spec.candidate
+    if (
+        launch.image != image
+        or image.specification.source_revision != spec.source_revision
+        or launch.model != spec.model
+        or launch.model_directory != spec.workspace / "models" / spec.model.digest()
+        or launch.revision.revision_id != spec.job_id + "-" + name
+        or launch.profile.base_url != f"http://127.0.0.1:{engine.port}/v1"
+        or launch.profile.served_model != spec.load.model
+        or json.loads(launch.profile.engine_parameters_json) != engine.parameters.model_dump()
+        or frozen.get("model_stage_id") != spec.job_id + ":model"
+        or frozen.get("build_stage_id") != spec.job_id + ":build"
+    ):
+        raise ValueError("cleanup launch differs from frozen producer inputs")
+    return launch
