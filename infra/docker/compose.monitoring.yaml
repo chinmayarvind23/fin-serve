@@ -1,0 +1,23 @@
+# Explicit opt-in override keeps monitoring credentials out of the base fixture requirements.
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports: ["127.0.0.1:9097:9090"]
+    volumes:
+      - ../../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.5
+    mem_limit: 256m
+  grafana:
+    image: grafana/grafana:12.1.0
+    ports: ["127.0.0.1:3007:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set a private Grafana password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../../monitoring/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/finserve.yaml:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.5
+    mem_limit: 256m

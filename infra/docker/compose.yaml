@@ -1,0 +1,46 @@
+name: finserve
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      args:
+        SOURCE_REVISION: ${SOURCE_REVISION:-unrecorded}
+    image: finserve-gateway:${SOURCE_REVISION:-local}
+    ports: ["127.0.0.1:8030:8000"]
+    environment:
+      FINSERVE_ENGINE: ${FINSERVE_ENGINE:-fixture}
+      FINSERVE_ENGINE_URL: ${FINSERVE_ENGINE_URL:-http://host.docker.internal:8020/v1}
+      FINSERVE_MODEL: ${FINSERVE_MODEL:-reference}
+      FINSERVE_API_KEY: ${FINSERVE_API_KEY:?set a private API key in an external env file}
+      FINSERVE_REDIS_URL: redis://:${REDIS_PASSWORD:?set a private Redis password}@redis:6379/0
+      FINSERVE_REDIS_KEY_SECRET: ${REDIS_KEY_SECRET:?set an independent HMAC secret}
+      FINSERVE_RATE_LIMIT: ${FINSERVE_RATE_LIMIT:-1200}
+    depends_on:
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 2
+    mem_limit: 512m
+    pids_limit: 128
+    restart: unless-stopped
+  redis:
+    image: redis:7.2-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
+    user: "999:999"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 64
+    restart: unless-stopped
