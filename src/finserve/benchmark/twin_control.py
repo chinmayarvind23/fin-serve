@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import os
+import socket
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -24,6 +25,17 @@ class Command(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operation: Literal["start", "stop", "fail", "status", "shutdown"]
     backend: Literal["a", "b"] = "a"
+
+
+def require_available_port(port: int) -> None:
+    """Reject live listeners while permitting Linux restart after an owned TIME_WAIT socket.
+
+    SO_REUSEADDR does not authorize reuse of a listening socket. The probe is advisory;
+    the engine must still bind successfully, and readiness checks its owned process lifetime.
+    """
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        probe.bind(("127.0.0.1", port))
 
 
 class TwinController:
@@ -97,10 +109,7 @@ class TwinController:
             raise ValueError("backend already owned; stop it explicitly before restart")
         endpoint = self.endpoint(backend)
         # An occupied port is not ours, even if it advertises the expected model.
-        import socket
-
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", httpx.URL(endpoint).port or 80))
+        require_available_port(httpx.URL(endpoint).port or 80)
         argv = list(self.profile["launch_argv"])
         argv[0] = str(self.executable)
         argv[argv.index("--port") + 1] = str(httpx.URL(endpoint).port)
@@ -167,6 +176,8 @@ class TwinController:
                         )
                     except Exception as exc:
                         event.update(status="failed", error=type(exc).__name__)
+                        if isinstance(exc, OSError):
+                            event["errno"] = exc.errno
                     finally:
                         event["finished_epoch_s"] = time.time()
                         write_json(self.output / ("result-" + path.name), event)

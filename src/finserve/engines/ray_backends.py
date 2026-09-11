@@ -29,7 +29,12 @@ from finserve.engines.backend_observations import (
 from finserve.engines.openai_adapter import OpenAICompletionEngine
 from finserve.engines.ray_serve import FixtureReplica, OwnedFixtureResponse, RoutedFixture
 from finserve.scheduler.policy import RoutingPolicy
-from finserve.scheduler.router import ReplicaRouter, RoutingLease
+from finserve.scheduler.router import (
+    NoReplicaAvailable,
+    ReplicaCapacityUnavailable,
+    ReplicaRouter,
+    RoutingLease,
+)
 from finserve.telemetry.tracing import from_env as tracing_from_env
 
 
@@ -223,6 +228,9 @@ class RoutedBackends(RoutedFixture):
         self.shared_gpu_uuid = shared_gpu_uuid
         self._gpu_sampler = SharedGpuSampler() if shared_gpu_uuid is not None else None
         self._disabled: set[str] = set()
+        self._pending_admissions = 0
+        self._admission_wait_count = 0
+        self._admission_wait_seconds = 0.0
         self._decisions: deque[dict[str, Any]] = deque(maxlen=256)
 
     def set_enabled(self, replica_id: str, enabled: bool) -> None:
@@ -256,6 +264,43 @@ class RoutedBackends(RoutedFixture):
                 ],
             }
         )
+
+    async def reserve_request(self, request: InferenceRequest, deadline: float) -> RoutingLease:
+        """Wait only for temporary saturation, within receipt budget and a fixed waiter cap.
+
+        No lease or worker invocation exists during this wait. Cached native gauges remain
+        conservative; refreshing after completion lets them expire without inventing capacity.
+        Healthy eligibility is required on every iteration. This is not a fairness guarantee.
+        """
+        if self._pending_admissions >= 128:
+            raise NoReplicaAvailable("Routing admission wait limit reached")
+        self._pending_admissions += 1
+        started = time.monotonic()
+        waited = False
+        try:
+            while True:
+                try:
+                    return await super().reserve_request(request, deadline)
+                except ReplicaCapacityUnavailable:
+                    if not waited:
+                        self._admission_wait_count += 1
+                        waited = True
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("Routing admission deadline exceeded") from None
+                    await asyncio.sleep(min(0.05, remaining))
+        finally:
+            self._pending_admissions -= 1
+            if waited:
+                self._admission_wait_seconds += time.monotonic() - started
+
+    def admission_statistics(self) -> dict[str, int | float]:
+        """Expose fixed-cardinality counters without contacting workers or retaining request IDs."""
+        return {
+            "pending_admissions": self._pending_admissions,
+            "admission_wait_count": self._admission_wait_count,
+            "admission_wait_seconds": self._admission_wait_seconds,
+        }
 
     async def refresh_snapshots(self) -> None:
         """Attach one shared-device sample per refresh, preventing invented per-engine VRAM."""
@@ -342,6 +387,7 @@ class RoutedBackends(RoutedFixture):
             physical["configured_shared_uuid"] = self.shared_gpu_uuid
         return {
             "active_reservations": self.router.active_reservations,
+            **self.admission_statistics(),
             "workers": workers,
             "physical_gpu_observation": physical,
             "disabled_backends": sorted(self._disabled),

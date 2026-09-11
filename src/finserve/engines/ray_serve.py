@@ -192,15 +192,19 @@ class RoutedFixture:
             async for token in output:
                 yield token
 
-    async def _generate(self, payload: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
-        """Route once, stream without retry, and drain cancellation before releasing admission."""
-        request = InferenceRequest.model_validate(payload)
-        deadline = time.monotonic() + request.timeout_seconds
+    async def reserve_request(self, request: InferenceRequest, deadline: float) -> RoutingLease:
+        """Keep the CPU fixture's immediate admission policy separate from production waiting."""
         await asyncio.wait_for(
             self.refresh_snapshots(),
             timeout=max(0, deadline - time.monotonic()),
         )
-        lease = self.router.reserve(RoutingRequest(model=request.model))
+        return self.router.reserve(RoutingRequest(model=request.model))
+
+    async def _generate(self, payload: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+        """Route once, stream without retry, and drain cancellation before releasing admission."""
+        request = InferenceRequest.model_validate(payload)
+        deadline = time.monotonic() + request.timeout_seconds
+        lease = await self.reserve_request(request, deadline)
         admission: asyncio.Future[Any] | None = None
         result: Any = None
         try:

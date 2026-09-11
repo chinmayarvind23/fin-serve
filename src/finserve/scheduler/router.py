@@ -14,6 +14,10 @@ class NoReplicaAvailable(RuntimeError):
     """Reject admission immediately rather than accumulating an unbounded waiting queue."""
 
 
+class ReplicaCapacityUnavailable(NoReplicaAvailable):
+    """Distinguish temporary saturation from health, model, or observation ineligibility."""
+
+
 @dataclass(frozen=True)
 class RoutingLease:
     """A unique reservation remains owned until completion or acknowledged cancellation."""
@@ -74,6 +78,11 @@ class ReplicaRouter:
                 if is_eligible(candidate, request, self.policy, timestamp)
             ]
             if not eligible:
+                if any(
+                    is_eligible(Candidate(candidate.snapshot, 0), request, self.policy, timestamp)
+                    for candidate in candidates
+                ):
+                    raise ReplicaCapacityUnavailable("Eligible replica capacity is saturated")
                 raise NoReplicaAvailable("No eligible replica has available capacity")
             minimum_load = min(candidate.load for candidate in eligible)
             decisions = [
