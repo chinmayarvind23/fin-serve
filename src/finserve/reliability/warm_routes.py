@@ -252,6 +252,34 @@ class WarmRouteStore:
             )
             return updated
 
+    def _verified_action(
+        self,
+        connection: sqlite3.Connection,
+        request: ApplyRequest,
+        decision: PromotionDecision,
+        health: HealthObservation,
+    ) -> RouteSnapshot:
+        """Compare the action receipt and current route while its write lock is held."""
+        fingerprint = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+        action: tuple[str, str] | None = connection.execute(
+            "SELECT fingerprint,payload FROM warm_actions WHERE id=?",
+            (request.idempotency_key,),
+        ).fetchone()
+        route = self._snapshot(connection, request.deployment_id)
+        if (
+            action is None
+            or action[0] != fingerprint
+            or RouteSnapshot.model_validate_json(action[1]) != route
+            or route.revision_id != request.target.revision_id
+            or route.revision_digest != request.target.digest()
+            or route.generation != request.expected_generation + 1
+            or decision.candidate_revision != request.target.revision_id
+            or decision.candidate_digest != request.target.digest()
+            or not health.verifies(request.target)
+        ):
+            raise ControlConflict("activation acknowledgment differs from current route action")
+        return route
+
     def acknowledge_candidate(
         self,
         control: DeploymentStore,
@@ -266,25 +294,8 @@ class WarmRouteStore:
         """
         if control.path == self.path:
             raise ValueError("route and control stores require separate database files")
-        fingerprint = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
         with self.transaction() as connection:
-            action: tuple[str, str] | None = connection.execute(
-                "SELECT fingerprint,payload FROM warm_actions WHERE id=?",
-                (request.idempotency_key,),
-            ).fetchone()
-            route = self._snapshot(connection, request.deployment_id)
-            if (
-                action is None
-                or action[0] != fingerprint
-                or RouteSnapshot.model_validate_json(action[1]) != route
-                or route.revision_id != request.target.revision_id
-                or route.revision_digest != request.target.digest()
-                or route.generation != request.expected_generation + 1
-                or decision.candidate_revision != request.target.revision_id
-                or decision.candidate_digest != request.target.digest()
-                or not health.verifies(request.target)
-            ):
-                raise ControlConflict("activation acknowledgment differs from current route action")
+            route = self._verified_action(connection, request, decision, health)
             current = control.deployment(request.deployment_id)
             if current.rollback_id is not None or (
                 (current.generation, current.active_revision)
@@ -305,6 +316,23 @@ class WarmRouteStore:
             ):
                 raise ControlConflict("activation acknowledgment no longer names current traffic")
             return updated
+
+    def stabilize_candidate(
+        self,
+        control: DeploymentStore,
+        request: ApplyRequest,
+        decision: PromotionDecision,
+        health: HealthObservation,
+        evidence_digest: str,
+    ) -> DeploymentState:
+        """Keep the route generation fixed while committing verified probation evidence."""
+        if control.path == self.path:
+            raise ValueError("route and control stores require separate database files")
+        with self.transaction() as connection:
+            route = self._verified_action(connection, request, decision, health)
+            return control.mark_stable(
+                request.deployment_id, route.generation, decision, health, evidence_digest
+            )
 
     def history(self, deployment_id: str) -> list[RouteSnapshot]:
         """Keep every cutover, including later restoration to an older revision."""

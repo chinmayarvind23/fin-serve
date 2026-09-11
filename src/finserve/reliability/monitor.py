@@ -203,6 +203,32 @@ class ProbeMonitor:
                 return observations, references, None
         return observations, references, None
 
+    def healthy_window(self) -> ArtifactRef:
+        """Reconstruct a complete, spaced healthy window before using it as probation evidence."""
+        observations, references, pending = self._history()
+        if (
+            pending is not None
+            or self.policy.maximum_probes < 2
+            or len(observations) != self.policy.maximum_probes
+            or any(self._classification(item) != "healthy" for item in observations)
+            or any(
+                right.finished_at - left.finished_at < self.policy.interval_seconds
+                for left, right in zip(observations, observations[1:], strict=False)
+            )
+        ):
+            raise ValueError("probation requires a complete spaced healthy monitor window")
+        return self.journal.artifacts.put(
+            json.dumps(
+                {
+                    "kind": "healthy-monitor-window-v1",
+                    "policy": self.policy.model_dump(mode="json"),
+                    "observations": [reference.model_dump() for reference in references],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        )
+
     async def observe(self, deployment_id: str) -> MonitorResult:
         """Issue at most one new probe; unresolved work never retries just because time elapsed."""
         if deployment_id != self.policy.deployment_id:

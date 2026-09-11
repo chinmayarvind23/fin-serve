@@ -9,6 +9,16 @@ commit can replay the same activation. A superseded route or unhealthy candidate
 acknowledgment and leaves known-good unchanged. Failed or incomplete lifecycle activation
 still requires reconciliation; this API does not automatically restore an unacknowledged route.
 
+After an acknowledged candidate completes its configured `ProbeMonitor` window, call
+`release_activation.complete_probation(job_id, monitor)`. It requires at least two probes,
+every probe healthy, and adjacent completion times separated by the configured interval.
+It reconstructs the retained observation chain, rechecks canonical approval, probes traffic
+again, and holds the route generation fixed while recording the probation evidence digest.
+Only then does known-good advance. Incomplete, failed, slow, compressed or stale windows
+cannot approve probation. Retrying successful completion preserves the same evidence and
+generation. These are synthetic health checks, not production SLA or user-output quality
+measurements; the separate canonical quality gate still applies.
+
 Use the trusted lifecycle controller and configured deployment adapter. There is no public HTTP rollback endpoint. The controller must already know the candidate, known-good revision, deployment generation and immutable evidence identities.
 
 1. Retain the regression signal and its detection time. Stop further promotion for that deployment.

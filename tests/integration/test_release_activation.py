@@ -8,7 +8,9 @@ from test_release_gate import prepare_gate
 
 from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.registry.lifecycle import LifecycleService, LifecycleSpec
-from finserve.registry.release_activation import acknowledge_release
+from finserve.registry.producer_stages import ProducerStages
+from finserve.registry.release_activation import acknowledge_release, complete_probation
+from finserve.reliability.monitor import MonitorPolicy, ProbeMonitor
 from finserve.reliability.rollback import ApplyRequest, ControlConflict, DeploymentStore
 from finserve.reliability.warm_routes import (
     BackendConfiguration,
@@ -18,7 +20,18 @@ from finserve.reliability.warm_routes import (
 )
 
 
-@pytest.mark.parametrize("fault", ["none", "quality", "unhealthy", "superseded"])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "none",
+        "quality",
+        "unhealthy",
+        "superseded",
+        "probation_failed",
+        "probation_fast",
+        "probation_stale",
+    ],
+)
 async def test_canonical_activation_acknowledges_exact_route(tmp_path: Path, fault: str) -> None:
     """Exercise the real gate and SSE health parser with explicit synthetic deployment traffic."""
     registry, artifacts, gate = prepare_gate(tmp_path, wrong=fault == "quality")
@@ -110,5 +123,56 @@ async def test_canonical_activation_acknowledges_exact_route(tmp_path: Path, fau
                 == acknowledged
             )
             assert len(routes.history(spec.deployment_id)) == 2
+            monitor = ProbeMonitor(
+                MonitorPolicy(
+                    monitor_id="probation",
+                    deployment_id=spec.deployment_id,
+                    revision_id=spec.target.revision_id,
+                    revision_digest=spec.target.digest(),
+                    generation=1,
+                    maximum_probes=3,
+                    consecutive_regressions=2,
+                    interval_seconds=60 if fault == "probation_fast" else 0.1,
+                    slow_probe_seconds=4,
+                    probe_timeout_seconds=5,
+                ),
+                ProducerStages(registry, artifacts),
+                control,
+                adapter,
+            )
+            with pytest.raises(ValueError, match="complete spaced healthy"):
+                await complete_probation(gate.job_id, monitor)
+            if fault == "probation_fast":
+                for _ in range(3):
+                    await monitor.observe(spec.deployment_id)
+            else:
+                if fault == "probation_failed":
+                    unhealthy = True
+                    await monitor.observe(spec.deployment_id)
+                    unhealthy = False
+                await monitor.run()
+            if fault == "probation_stale":
+                routes.apply(
+                    ApplyRequest(
+                        deployment_id=spec.deployment_id,
+                        expected_revision=spec.target.revision_id,
+                        expected_generation=1,
+                        target=registry.revision(spec.expected_revision),
+                        idempotency_key="fixture-post-probation-action",
+                    )
+                )
+            if fault in {"probation_failed", "probation_fast", "probation_stale"}:
+                with pytest.raises(ControlConflict if fault == "probation_stale" else ValueError):
+                    await complete_probation(gate.job_id, monitor)
+                assert (
+                    control.deployment(spec.deployment_id).known_good_revision
+                    == spec.expected_revision
+                )
+            else:
+                stable = await complete_probation(gate.job_id, monitor)
+                assert (
+                    stable.generation == 1 and stable.known_good_revision == spec.target.revision_id
+                )
+                assert await complete_probation(gate.job_id, monitor) == stable
     finally:
         registry.close()

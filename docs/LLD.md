@@ -63,6 +63,15 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+Probation completion reconstructs the full monitor observation chain and requires at least
+two healthy probes, the configured number of probes, and the configured interval between
+adjacent completion times. The CAS evidence includes the frozen monitor policy and ordered
+observation references. The completion API rechecks canonical lifecycle approval and binds
+the monitor to its deployment, target digest and activation generation. Fresh health and the
+unchanged lifecycle route-action receipt are required under the route-to-control lock order
+before `mark_stable` persists that evidence digest and advances known-good. A successful
+replay uses the same digest; a failed or stale window never becomes probation approval.
+
 Canonical activation acknowledgment is a separate step after lifecycle promotion. It
 recomputes the gate, requires the same decision recorded by the promoted lifecycle job, and
 performs a fresh warm-route health probe. Under the route store's write transaction it checks
