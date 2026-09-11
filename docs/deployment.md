@@ -12,6 +12,8 @@ The runtime producer fetches a pinned model snapshot, verifies each file, builds
 
 The [Terraform foundation](../infra/terraform/README.md) describes private EKS networking, bounded CPU/GPU groups, RDS, Redis, S3, ECR and workload identities. The [Kubernetes stages](../infra/kubernetes/README.md) install KubeRay/device-plugin operators before Ray and GPU engine workloads. The current chart serves one external GPU engine through CPU Ray proxies; extra proxies are not extra model capacity.
 
+The engine chart runs the verified producer entrypoint with an expected canonical profile hash, model, internal endpoint and credential environment. It mounts an existing model PVC and immutable profile ConfigMap read-only, then verifies actual model bytes before startup. An optional FastAPI Deployment exposes text/chat SSE through a private Service and enforces required ingress/Ray credentials. Local Helm tests render both modes against the actual pinned RayService schema. Existing storage and credentials, authenticated inference, and cluster enforcement still need deployment evidence.
+
 Provider mocks and Helm/CRD validation verify configuration contracts. Deployment still requires a valid account session, private-cluster connectivity, region-specific image/add-on resolution, application secrets, storage, TLS ingress and actual service checks. Keep Terraform state, plans and credentials outside the source checkout.
 
 The staging foundation uses a single NAT gateway, single-AZ RDS, one Redis node and a GPU group bounded to one node. These are explicit resource constraints, not high-availability guarantees. The existing GPU Deployment uses Recreate and cannot provide an overlapping warm canary on that single GPU allocation.

@@ -18,6 +18,8 @@ Local model/artifact volumes belong to trusted operators. Static path checks do 
 
 Credentials remain in private process configuration, not images, manifests or browser bundles. Browser access uses a separate web credential retained only in memory. Pinned bases/lockfiles and non-root runtime configuration improve reproducibility; they are not evidence that vulnerability scans or SBOM generation ran.
 
+The Kubernetes text gateway enables `FINSERVE_REQUIRE_AUTH=1` in the gateway and Ray pod groups. Factories and each actor reject absent, empty, short, oversized or malformed credentials before allocating serving resources. Ingress, Ray-hop and engine keys have separate Secret references. This production requirement is opt-in for other local launches; an unauthenticated fixture does not become a protected deployment merely by having a health endpoint.
+
 Terraform and Helm define private data services, scoped workload identities, resource limits and NetworkPolicies. Those configurations have local validation evidence. Their enforcement, application secret provisioning, TLS and cloud service health remain unverified until deployment. The local SQLite stores do not imply a highly available production control plane.
 
 ## Data visibility
