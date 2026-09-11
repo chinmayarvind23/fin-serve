@@ -1,0 +1,22 @@
+# The producer verifies this official linux/amd64 vLLM0.29.0 manifest before building.
+# Google's Docker Hub cache serves the same verified manifest after the direct CDN failed.
+FROM mirror.gcr.io/vllm/vllm-openai:v0.29.0@sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b
+ARG SOURCE_REVISION
+ARG MODEL_MANIFEST_SHA256
+LABEL org.opencontainers.image.source="https://github.com/chinmayarvind23/fin-serve" \
+      org.opencontainers.image.revision=$SOURCE_REVISION \
+      finserve.model_manifest_sha256=$MODEL_MANIFEST_SHA256 \
+      finserve.engine="vllm" \
+      finserve.engine_version="0.29.0"
+# Source comes from the exact Git archive; the producer adds only the verified manifest.
+COPY src/finserve /opt/finserve/source/finserve
+COPY producer/model-manifest.json /opt/finserve/model-manifest.json
+ENV PYTHONPATH="/opt/finserve/source" \
+    HOME="/tmp/finserve" \
+    HF_HUB_OFFLINE="1" \
+    TRANSFORMERS_OFFLINE="1" \
+    VLLM_NO_USAGE_STATS="1" \
+    VLLM_CACHE_ROOT="/tmp/finserve/vllm"
+USER 10001:10001
+EXPOSE 8000
+ENTRYPOINT ["python3", "-m", "finserve.registry.engine_entrypoint"]
