@@ -63,6 +63,16 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+The managed quality stage shares the completed launch reference with performance collection.
+One durable attempt owns the pre-collection runtime observation, raw quality collection,
+post-collection observation and receipt publication. Both observations must name the same
+container ID, start time, launch digest and attempt. The recorded wall-clock collection interval
+must lie between them. Raw quality reconstruction and the frozen specification digest are
+checked before stage completion and on replay. The interval is collection provenance; it is
+not a per-request latency measurement. Process restarts reject publication, while a failed
+transport close retains an unresolved stage. Completed receipts can replay after the runtime
+stops because replay validates retained evidence without making new health or inference calls.
+
 `PerformanceCollectionSpec` binds the workload and request configuration to a serving profile,
 runtime revision and separate collector commit. The producer journal freezes this specification
 and the completed launch reference. Before and after collection, the Docker adapter checks the

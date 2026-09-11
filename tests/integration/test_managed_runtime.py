@@ -20,10 +20,13 @@ from finserve.contracts.deployment import Revision
 from finserve.contracts.managed_runtime import RuntimeLaunchSpec, RuntimeReceipt
 from finserve.contracts.model_assets import ModelFetchSpec, SourceFile
 from finserve.contracts.performance import PerformanceCollectionSpec
+from finserve.contracts.producer import QualityCollectionSpec
 from finserve.contracts.serving_profile import ServingProfileV1
+from finserve.evaluation.quality import default_suite
 from finserve.http_ownership import HTTPClosureError
 from finserve.registry.artifacts import ArtifactRef, LocalArtifactStore
 from finserve.registry.engine_entrypoint import VLLMParameters
+from finserve.registry.managed_quality import load_managed_quality, managed_quality_stage
 from finserve.registry.managed_runtime import (
     DockerRuntime,
     create_arguments,
@@ -40,7 +43,11 @@ from finserve.registry.performance_stages import (
     register_managed_gpu,
 )
 from finserve.registry.producer_stages import ProducerStages, StageState
-from finserve.registry.producer_tasks import ModelSnapshotReceipt, declare_input
+from finserve.registry.producer_tasks import (
+    ModelSnapshotReceipt,
+    declare_input,
+    load_quality_receipt,
+)
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage, expected_labels
 from finserve.registry.runtime_stages import (
     RuntimeStopReceipt,
@@ -291,6 +298,170 @@ def upstream(journal: ProducerStages, spec: RuntimeLaunchSpec, tmp_path: Path) -
         "job:build", state.attempt_id, journal.artifacts.put(spec.image.model_dump_json().encode())
     )
     return spec
+
+
+async def test_managed_quality_binds_runtime_and_replays_without_requests(tmp_path: Path) -> None:
+    """Real protocol collection has runtime provenance but cannot claim fixture output accuracy."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        runtime_spec = upstream(journal, specification(tmp_path), tmp_path)
+        performance = performance_spec(runtime_spec)
+        spec = QualityCollectionSpec(
+            collection_id="quality",
+            profile=runtime_spec.profile,
+            revision=runtime_spec.revision,
+            suite=default_suite(),
+            configuration=performance.configuration,
+        )
+        runtime = DockerRuntime(Daemon(runtime_spec))
+        calls = 0
+
+        def response(request: httpx.Request) -> httpx.Response:
+            """Count runtime probes and quality requests to expose hidden recollection on replay."""
+            nonlocal calls
+            calls += 1
+            return handler(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+            await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                runtime_spec,
+                tmp_path / "runtime",
+                client,
+                runtime,
+            )
+            receipt = await managed_quality_stage(
+                journal, "job:quality", "job:launch", spec, tmp_path / "quality", client, runtime
+            )
+            before = calls
+            assert (
+                await managed_quality_stage(
+                    journal,
+                    "job:quality",
+                    "job:launch",
+                    spec,
+                    tmp_path / "quality",
+                    client,
+                    runtime,
+                )
+                == receipt
+            )
+            assert calls == before
+            recorded, result = load_quality_receipt(journal, receipt.quality)
+            assert recorded == spec and result.recorded == len(spec.suite.cases)
+            assert result.successful == len(spec.suite.cases)
+            for altered in (
+                receipt.model_copy(update={"collection_started_at": receipt.after.observed_at + 1}),
+                receipt.model_copy(
+                    update={"before": receipt.before.model_copy(update={"container_id": "0" * 64})}
+                ),
+                receipt.model_copy(
+                    update={
+                        "after": receipt.after.model_copy(
+                            update={"container_started_at": "restarted"}
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={"runtime": runtime_spec.model_copy(update={"memory_mib": 9000})}
+                ),
+            ):
+                with pytest.raises(ValueError):
+                    load_managed_quality(
+                        journal, journal.artifacts.put(altered.model_dump_json().encode())
+                    )
+            with pytest.raises(RegistryConflict):
+                await managed_quality_stage(
+                    journal,
+                    "job:quality",
+                    "job:launch",
+                    spec.model_copy(update={"collection_id": "different"}),
+                    tmp_path / "quality",
+                    client,
+                    runtime,
+                )
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize("fault", ["restarted", "closure", "cancelled", "substituted"])
+async def test_managed_quality_retains_unpublishable_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    """A changed process cannot publish quality; uncertain cleanup cannot become retryable."""
+    from finserve.registry.quality_collection import collect_quality
+
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        runtime_spec = upstream(journal, specification(tmp_path), tmp_path)
+        spec = QualityCollectionSpec(
+            collection_id="quality",
+            profile=runtime_spec.profile,
+            revision=runtime_spec.revision,
+            suite=default_suite(),
+            configuration=performance_spec(runtime_spec).configuration,
+        )
+        daemon = Daemon(runtime_spec)
+        runtime = DockerRuntime(daemon)
+
+        async def changed_collection(
+            client: httpx.AsyncClient, specification: QualityCollectionSpec, output: Path
+        ) -> None:
+            """Retain real raw responses before injecting the post-collection fault."""
+            if fault == "substituted":
+                specification = specification.model_copy(update={"collection_id": "different"})
+            await collect_quality(client, specification, output)
+            if fault == "substituted":
+                return
+            if fault == "closure":
+                raise HTTPClosureError("fixture unresolved close")
+            if fault == "cancelled":
+                raise asyncio.CancelledError
+            assert daemon.container is not None
+            daemon.container["State"]["StartedAt"] = "changed-after-quality"
+
+        monkeypatch.setattr("finserve.registry.managed_quality.collect_quality", changed_collection)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                runtime_spec,
+                tmp_path / "runtime",
+                client,
+                runtime,
+            )
+            error = (
+                HTTPClosureError
+                if fault == "closure"
+                else asyncio.CancelledError
+                if fault == "cancelled"
+                else RuntimeError
+                if fault == "restarted"
+                else ValueError
+            )
+            with pytest.raises(error):
+                await managed_quality_stage(
+                    journal,
+                    "job:quality",
+                    "job:launch",
+                    spec,
+                    tmp_path / "quality",
+                    client,
+                    runtime,
+                )
+            state = journal.state("job:quality")
+            assert state.status == ("running" if fault == "closure" else "failed")
+            assert state.output is None
+            assert list((tmp_path / "quality").rglob("requests.jsonl"))
+    finally:
+        registry.close()
 
 
 def performance_spec(spec: RuntimeLaunchSpec) -> PerformanceCollectionSpec:

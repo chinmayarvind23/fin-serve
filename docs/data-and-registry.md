@@ -40,6 +40,14 @@ closing the raw file or publishing terminal evidence fails. Its stage remains ru
 reconciliation. Partial files cannot authorize retry or serve as completed quality receipts;
 local transport cleanup does not establish remote inference termination.
 
+`managed_quality_stage` encloses quality collection with observations of the same completed
+Docker launch used by performance collection. Its receipt binds the exact container ID and
+start time, runtime specification, collection interval and reconstructed quality artifacts.
+Publication and replay both compare the collected specification with the frozen stage input.
+A restart during collection prevents publication; completed replay offers no requests. This
+adds runtime provenance to the existing quality evidence, not a correctness approval or a
+live GPU measurement through the managed stage.
+
 `DeploymentStore` uses SQLite for known-good revisions, decisions, detector signals and rollback state. `WarmRouteStore` is a separate SQLite store representing the external traffic route, with its own generation and idempotency receipts. Registry approval does not imply traffic activation or verified recovery.
 
 MLflow is an optional reporting mirror with verified decision-to-run binding; it cannot authorize deployment. Local MLflow integration is tested. Redis owns ephemeral serving state, never evidence or recovery truth. [Airflow pipeline](airflow-pipeline.md) describes the implemented lifecycle and remaining producer orchestration.
