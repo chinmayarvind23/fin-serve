@@ -147,7 +147,8 @@ def test_install_values_fail_closed(tmp_path: Path, invalid: str) -> None:
     assert result.returncode != 0 and "schema" in result.stderr
 
 
-def test_rayservice_matches_actual_pinned_operator_crd(tmp_path: Path) -> None:
+@pytest.mark.parametrize("with_gateway", [False, True])
+def test_rayservice_matches_actual_pinned_operator_crd(tmp_path: Path, with_gateway: bool) -> None:
     """Use the downloaded operator's real OpenAPI schema, rather than a hand-maintained mock."""
     yaml = pytest.importorskip("yaml")
     jsonschema = pytest.importorskip("jsonschema")
@@ -168,9 +169,65 @@ def test_rayservice_matches_actual_pinned_operator_crd(tmp_path: Path) -> None:
     schema = next(item for item in definition["spec"]["versions"] if item["name"] == "v1")[
         "schema"
     ]["openAPIV3Schema"]
-    rendered = render(tmp_path, fixture_values())
+    rendered = render(tmp_path, gateway_values() if with_gateway else fixture_values())
     assert rendered.returncode == 0, rendered.stderr
     resource = next(
         item for item in yaml.safe_load_all(rendered.stdout) if item["kind"] == "RayService"
     )
     jsonschema.Draft4Validator(schema).validate(resource)
+
+
+def gateway_values() -> dict[str, Any]:
+    """An enabled render fixture binds separate ingress and Ray hop credentials by Secret keys."""
+    values = fixture_values()
+    values["gateway"] = {
+        "enabled": True,
+        "image": "example.invalid/fixture-gateway@sha256:" + "e" * 64,
+        "sourceRevision": "f" * 40,
+        "credentialsSecret": "fixture-gateway",
+    }
+    return values
+
+
+def test_gateway_and_ray_share_only_the_internal_hop_credential(tmp_path: Path) -> None:
+    """The public SSE process connects to the operator's internal NDJSON Service with fixed auth."""
+    yaml = pytest.importorskip("yaml")
+    rendered = render(tmp_path, gateway_values())
+    assert rendered.returncode == 0, rendered.stderr
+    documents = list(yaml.safe_load_all(rendered.stdout))
+    gateway = next(
+        item
+        for item in documents
+        if item["kind"] == "Deployment" and item["metadata"]["name"] == "fixture-gateway"
+    )
+    pod = gateway["spec"]["template"]["spec"]
+    runtime = pod["containers"][0]
+    env = {item["name"]: item for item in runtime["env"]}
+    assert env["FINSERVE_ENGINE"]["value"] == "ray-http"
+    assert env["FINSERVE_REQUIRE_AUTH"]["value"] == "1"
+    assert env["FINSERVE_ENGINE_URL"]["value"] == "http://fixture-ray-serve-svc:8000"
+    assert env["FINSERVE_API_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "api-key"
+    hop = env["FINSERVE_RAY_API_KEY"]["valueFrom"]
+    assert hop == {"secretKeyRef": {"name": "fixture-gateway", "key": "ray-api-key"}}
+    assert "FINSERVE_ENGINE_API_KEY" not in env
+    assert pod["securityContext"]["runAsUser"] == 10001
+    assert runtime["securityContext"]["readOnlyRootFilesystem"]
+    assert "nvidia.com/gpu" not in runtime["resources"]["limits"]
+    ray = next(item for item in documents if item["kind"] == "RayService")
+    cluster = ray["spec"]["rayClusterConfig"]
+    for group in [cluster["headGroupSpec"], *cluster["workerGroupSpecs"]]:
+        actor_env = {
+            item["name"]: item for item in group["template"]["spec"]["containers"][0]["env"]
+        }
+        assert actor_env["FINSERVE_RAY_API_KEY"]["valueFrom"] == hop
+        assert actor_env["FINSERVE_REQUIRE_AUTH"]["value"] == "1"
+        assert "FINSERVE_API_KEY" not in actor_env
+
+
+@pytest.mark.parametrize("field", ["image", "sourceRevision", "credentialsSecret"])
+def test_enabled_gateway_requires_deployment_identity(tmp_path: Path, field: str) -> None:
+    """An enabled API needs immutable image/source identities and a credential reference."""
+    values = gateway_values()
+    values["gateway"][field] = ""
+    result = render(tmp_path, values)
+    assert result.returncode != 0 and "schema" in result.stderr

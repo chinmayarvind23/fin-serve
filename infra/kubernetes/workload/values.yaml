@@ -16,3 +16,10 @@ engine:
   credentialsSecret: ""
   startupSeconds: 900
 evidenceRoleArn: ""
+gateway:
+  enabled: false
+  image: ""
+  sourceRevision: ""
+  # Distinct api-key and ray-api-key values; engine credentials stay in the engine Secret.
+  credentialsSecret: ""
+  maxConcurrency: 16

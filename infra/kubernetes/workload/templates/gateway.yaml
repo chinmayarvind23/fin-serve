@@ -1,0 +1,72 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-gateway}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-gateway, finserve.io/component: gateway}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-runtime
+      nodeSelector: {finserve.io/pool: cpu}
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gateway
+          image: {{ .Values.gateway.image | quote }}
+          command: [uvicorn, finserve.gateway.app:from_env, --factory, --host, "0.0.0.0", --port, "8000", --no-access-log]
+          env:
+            - {name: FINSERVE_REQUIRE_AUTH, value: "1"}
+            - {name: FINSERVE_ENGINE, value: ray-http}
+            - {name: FINSERVE_ENGINE_URL, value: {{ printf "http://%s-ray-serve-svc:8000" .Release.Name | quote }}}
+            - {name: FINSERVE_MODEL, value: {{ .Values.engine.servedModel | quote }}}
+            - {name: FINSERVE_REVISION, value: {{ .Values.gateway.sourceRevision | quote }}}
+            - {name: FINSERVE_MAX_CONCURRENCY, value: {{ .Values.gateway.maxConcurrency | quote }}}
+            - name: FINSERVE_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.gateway.credentialsSecret | quote }}, key: api-key}
+            - name: FINSERVE_RAY_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.gateway.credentialsSecret | quote }}, key: ray-api-key}
+          ports: [{name: http, containerPort: 8000}]
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          # These process probes cannot substitute for authenticated model inference at promotion.
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: scratch, mountPath: /tmp}]
+      volumes:
+        - name: scratch
+          emptyDir: {medium: Memory, sizeLimit: 32Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  type: ClusterIP
+  selector: {app: {{ .Release.Name }}-gateway}
+  ports: [{name: http, port: 8000, targetPort: http}]
+{{- end }}

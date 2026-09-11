@@ -385,7 +385,15 @@ def create_app(
 
 def from_env() -> FastAPI:
     """Explicit fixture/reference modes prevent a fake engine masquerading as a real model."""
+    from finserve.auth import require_credentials
+
     backend = os.getenv("FINSERVE_ENGINE", "fixture")
+    credentials = ["FINSERVE_API_KEY"]
+    if backend == "ray-http":
+        credentials.append("FINSERVE_RAY_API_KEY")
+    elif backend in {"vllm", "sglang"}:
+        credentials.append("FINSERVE_ENGINE_API_KEY")
+    require_credentials(*credentials)
     engine: Engine
     if backend == "pytorch":
         from finserve.engines.pytorch_reference import PyTorchReferenceEngine

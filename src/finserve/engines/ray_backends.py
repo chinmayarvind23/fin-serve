@@ -84,6 +84,9 @@ class OpenAIEngineReplica(FixtureReplica):
         observe_engine_metrics: bool = False,
     ) -> None:
         """Resolve the engine credential from the trusted worker environment."""
+        from finserve.auth import require_credentials
+
+        require_credentials("FINSERVE_ENGINE_API_KEY")
         super().__init__(replica_id, capacity, 0)
         self.model = model
         self.engine = OpenAICompletionEngine(base_url, api_key=os.getenv("FINSERVE_ENGINE_API_KEY"))
@@ -217,6 +220,9 @@ class RoutedBackends(RoutedFixture):
         shared_gpu_uuid: str | None = None,
     ) -> None:
         """One actor owns routing reservations; external engines scale separately."""
+        from finserve.auth import require_credentials
+
+        require_credentials("FINSERVE_RAY_API_KEY")
         self.handles, self.model = handles, model
         self.router = ReplicaRouter(RoutingPolicy(mode=mode))
         from opentelemetry.trace import NoOpTracer
@@ -406,6 +412,9 @@ class ServeRoutedBackends(RoutedBackends):
 
 def build_application(args: dict[str, Any]) -> Any:
     """Public Ray Serve application builder; KubeRay passes the same validated args mapping."""
+    from finserve.auth import require_credentials
+
+    require_credentials("FINSERVE_ENGINE_API_KEY", "FINSERVE_RAY_API_KEY")
     configuration = BackendConfiguration.model_validate(args)
     serve = importlib.import_module("ray.serve")
     workers = {

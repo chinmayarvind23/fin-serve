@@ -55,6 +55,12 @@ spec:
                 - name: FINSERVE_ENGINE_API_KEY
                   valueFrom:
                     secretKeyRef: {name: {{ .Values.engine.credentialsSecret | quote }}, key: api-key}
+                {{- if .Values.gateway.enabled }}
+                - {name: FINSERVE_REQUIRE_AUTH, value: "1"}
+                - name: FINSERVE_RAY_API_KEY
+                  valueFrom:
+                    secretKeyRef: {name: {{ .Values.gateway.credentialsSecret | quote }}, key: ray-api-key}
+                {{- end }}
     workerGroupSpecs:
       - groupName: cpu-proxies
         replicas: {{ .Values.ray.workers }}
@@ -91,3 +97,9 @@ spec:
                   - name: FINSERVE_ENGINE_API_KEY
                     valueFrom:
                       secretKeyRef: {name: {{ .Values.engine.credentialsSecret | quote }}, key: api-key}
+                  {{- if .Values.gateway.enabled }}
+                  - {name: FINSERVE_REQUIRE_AUTH, value: "1"}
+                  - name: FINSERVE_RAY_API_KEY
+                    valueFrom:
+                      secretKeyRef: {name: {{ .Values.gateway.credentialsSecret | quote }}, key: ray-api-key}
+                  {{- end }}

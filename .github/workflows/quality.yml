@@ -47,7 +47,7 @@ jobs:
         run: '"$FINSERVE_HELM" dependency build infra/kubernetes/operators'
       - name: Validate actual Helm output and RayService schema
         run: >-
-          uv run --isolated --no-project --with pytest --with pyyaml --with jsonschema
+          uv run --isolated --no-project --with pytest --with pytest-asyncio --with pyyaml --with jsonschema
           python -m pytest tests/contract/test_infrastructure.py -q -o addopts=
   monitoring:
     runs-on: ubuntu-latest
