@@ -17,3 +17,4 @@ jobs:
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync pyright
       - run: uv run --no-sync pytest --cov=finserve --cov-report=term-missing --cov-fail-under=85
+      - run: uv run --no-sync python scripts/check_semantic_mutations.py --output "$RUNNER_TEMP/finserve-mutations"

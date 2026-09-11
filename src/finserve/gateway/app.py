@@ -8,9 +8,11 @@ import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from opentelemetry.trace import NoOpTracer, StatusCode, Tracer
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import ValidationError
 from starlette.types import Receive, Scope, Send
@@ -21,6 +23,7 @@ from finserve.engines.fixture import FixtureEngine
 from finserve.gateway.admission import Admission
 from finserve.gateway.body_limit import BodyLimit
 from finserve.telemetry.metrics import Metrics
+from finserve.telemetry.tracing import JsonSpanExporter, TraceRuntime
 
 
 def error_response(code: str, status: int, request_id: str = "") -> JSONResponse:
@@ -99,6 +102,7 @@ class Serving:
     metrics: Metrics
     model: str
     api_key: str | None
+    tracer: Tracer
 
     async def events(
         self, request: InferenceRequest, received: float, chat: bool, lease: Lease | None = None
@@ -109,6 +113,14 @@ class Serving:
         lease = lease or Lease(self.admission, self.metrics)
         lease.started = True
         iterator: AsyncIterator[EngineToken] | None = None
+        span = self.tracer.start_span(
+            "finserve.inference",
+            attributes={
+                "gen_ai.request.model": request.model,
+                "finserve.max_tokens": request.max_tokens,
+                "finserve.prompt_characters": len(request.prompt),
+            },
+        )
         try:
             remaining = max(0, request.timeout_seconds - (time.perf_counter() - received))
             if remaining <= 0:
@@ -171,6 +183,10 @@ class Serving:
                 lease.release()
                 self.metrics.requests.labels(outcome=outcome).inc()
                 self.metrics.duration.observe(time.perf_counter() - received)
+                span.set_attribute("finserve.outcome", outcome)
+                span.set_attribute("gen_ai.usage.output_tokens", count)
+                span.set_status(StatusCode.OK if outcome == "success" else StatusCode.ERROR)
+                span.end()
 
     async def respond(
         self, payload: InferenceRequest, request: Request, chat: bool = False
@@ -240,17 +256,28 @@ def create_app(
     model: str = "reference",
     max_concurrency: int = 16,
     api_key: str | None = None,
+    tracing: TraceRuntime | None = None,
+    revision: str = "unrecorded",
 ) -> FastAPI:
     """Tests inject engines; deployments select an explicit backend through the factory."""
     serving = Serving(
-        engine or FixtureEngine(), Admission(max_concurrency), Metrics(), model, api_key
+        engine or FixtureEngine(),
+        Admission(max_concurrency),
+        Metrics(),
+        model,
+        api_key,
+        tracing.tracer if tracing else NoOpTracer(),
     )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         """Close pooled clients when shutdown completes; Uvicorn handles request draining."""
         yield
-        await serving.engine.close()
+        try:
+            await serving.engine.close()
+        finally:
+            if tracing is not None:
+                await asyncio.to_thread(tracing.close)
 
     app = FastAPI(title="FinServe", version="0.1.0", lifespan=lifespan)
     app.add_middleware(BodyLimit)
@@ -259,7 +286,7 @@ def create_app(
     @app.get("/healthz")
     async def health() -> dict[str, str]:
         """Liveness makes no claim about downstream GPU readiness."""
-        return {"status": "ok", "model": model}
+        return {"status": "ok", "model": model, "revision": revision}
 
     @app.get("/metrics")
     async def metrics() -> Response:
@@ -306,9 +333,20 @@ def from_env() -> FastAPI:
         )
     else:
         raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
+    trace_path = os.getenv("FINSERVE_TRACE_PATH")
+    tracing = (
+        TraceRuntime(
+            JsonSpanExporter(Path(trace_path)),
+            float(os.getenv("FINSERVE_TRACE_SAMPLE_RATIO", "0.01")),
+        )
+        if trace_path
+        else None
+    )
     return create_app(
         engine,
         model=os.getenv("FINSERVE_MODEL", "reference"),
         max_concurrency=int(os.getenv("FINSERVE_MAX_CONCURRENCY", "16")),
         api_key=os.getenv("FINSERVE_API_KEY"),
+        tracing=tracing,
+        revision=os.getenv("FINSERVE_REVISION", "unrecorded"),
     )
