@@ -1351,6 +1351,10 @@ distributed = [
     { name = "ray", extra = ["serve"] },
     { name = "redis" },
 ]
+explorer = [
+    { name = "graphql-core" },
+    { name = "sqlalchemy" },
+]
 multimodal = [
     { name = "flax" },
     { name = "jax" },
@@ -1367,6 +1371,9 @@ registry = [
     { name = "mlflow" },
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
+]
+vision = [
+    { name = "pillow" },
 ]
 visual-proto = [
     { name = "grpcio-tools" },
@@ -1392,6 +1399,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'registry'", specifier = ">=1.35,<2" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "flax", marker = "extra == 'multimodal'", specifier = ">=0.10,<1" },
+    { name = "graphql-core", marker = "extra == 'explorer'", specifier = ">=3.2,<3.3" },
     { name = "grpcio", marker = "extra == 'visual-worker'", specifier = "==1.78.0" },
     { name = "grpcio-tools", marker = "extra == 'visual-proto'", specifier = "==1.78.0" },
     { name = "httpx", specifier = ">=0.28,<1" },
@@ -1401,6 +1409,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.30,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.30,<2" },
     { name = "pillow", marker = "extra == 'multimodal'", specifier = ">=11,<13" },
+    { name = "pillow", marker = "extra == 'vision'", specifier = ">=11,<13" },
     { name = "prometheus-client", specifier = ">=0.21,<1" },
     { name = "protobuf", marker = "extra == 'visual-worker'", specifier = "==6.33.5" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'registry'", specifier = ">=3,<4" },
@@ -1408,11 +1417,12 @@ requires-dist = [
     { name = "ray", extras = ["serve"], marker = "extra == 'distributed'", specifier = ">=2.40,<3" },
     { name = "redis", marker = "extra == 'cache'", specifier = ">=5,<7" },
     { name = "redis", marker = "extra == 'distributed'", specifier = ">=5,<7" },
+    { name = "sqlalchemy", marker = "extra == 'explorer'", specifier = ">=2,<3" },
     { name = "sqlalchemy", marker = "extra == 'registry'", specifier = ">=2,<3" },
     { name = "torch", marker = "extra == 'reference'", specifier = ">=2.6,<3" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
-provides-extras = ["reference", "cache", "distributed", "registry", "multimodal", "visual-worker", "visual-proto", "orchestration"]
+provides-extras = ["reference", "cache", "distributed", "registry", "multimodal", "vision", "explorer", "visual-worker", "visual-proto", "orchestration"]
 
 [package.metadata.requires-dev]
 dev = [

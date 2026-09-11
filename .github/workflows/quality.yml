@@ -12,7 +12,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.8.4"
-      - run: uv sync --frozen --extra reference --extra multimodal --extra cache --extra registry --extra visual-worker --extra visual-proto
+      - run: uv sync --frozen --extra reference --extra multimodal --extra cache --extra registry --extra visual-worker --extra visual-proto --extra explorer --extra vision
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync pyright
