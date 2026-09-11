@@ -17,6 +17,8 @@ spec:
   template:
     metadata:
       labels: {app: {{ .Release.Name }}-engine, finserve.io/component: engine}
+      annotations:
+        finserve.io/profile-sha256: {{ .Values.engine.profileSha256 | quote }}
     spec:
       serviceAccountName: {{ .Release.Name }}-runtime
       terminationGracePeriodSeconds: 120
@@ -26,42 +28,39 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
-      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: engine
           image: {{ .Values.engine.image | quote }}
-          command: [python, -m, vllm.entrypoints.openai.api_server]
+          command: [python3, -m, finserve.registry.engine_entrypoint]
           args:
-            - --host
-            - "0.0.0.0"
-            - --port
-            - "8000"
-            - --model
-            - {{ .Values.engine.model | quote }}
-            - --revision
-            - {{ .Values.engine.revision | quote }}
-            - --tokenizer-revision
-            - {{ .Values.engine.tokenizerRevision | quote }}
-            - --served-model-name
+            - --profile
+            - /run/finserve/profile.json
+            - --profile-sha256
+            - {{ .Values.engine.profileSha256 | quote }}
+            - --expected-model
             - {{ .Values.engine.servedModel | quote }}
-            - --max-model-len
-            - {{ .Values.engine.maxModelLength | quote }}
-            - --max-num-seqs
-            - {{ .Values.engine.maxSequences | quote }}
-            - --gpu-memory-utilization
-            - "0.80"
+            - --expected-base-url
+            - {{ printf "http://%s-engine:8000/v1" .Release.Name | quote }}
+            - --expected-credential-env
+            - FINSERVE_ENGINE_API_KEY
           env:
-            - name: HF_HOME
-              value: /cache/huggingface
-            - name: VLLM_API_KEY
+            - name: FINSERVE_ENGINE_API_KEY
               valueFrom:
-                secretKeyRef: {name: {{ .Values.engine.credentialsSecret }}, key: api-key}
+                secretKeyRef: {name: {{ .Values.engine.credentialsSecret | quote }}, key: api-key}
           ports: [{name: http, containerPort: 8000}]
           resources:
-            requests: {cpu: "3", memory: 12Gi, nvidia.com/gpu: "1"}
-            limits: {cpu: "3", memory: 12Gi, nvidia.com/gpu: "1"}
+            requests: {cpu: "3", memory: 12Gi, ephemeral-storage: 2Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "3", memory: 12Gi, ephemeral-storage: 8Gi, nvidia.com/gpu: "1"}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           startupProbe:
             httpGet: {path: /health, port: http}
@@ -76,11 +75,22 @@ spec:
             periodSeconds: 30
             failureThreshold: 4
           volumeMounts:
-            - {name: cache, mountPath: /cache}
+            - {name: model, mountPath: /models, readOnly: true}
+            - {name: profile, mountPath: /run/finserve, readOnly: true}
+            # Triton loads generated native libraries here; this volume must permit execution.
+            - {name: scratch, mountPath: /tmp}
             - {name: shm, mountPath: /dev/shm}
       volumes:
-        - name: cache
-          emptyDir: {sizeLimit: 40Gi}
+        - name: model
+          persistentVolumeClaim:
+            claimName: {{ .Values.engine.modelClaim | quote }}
+            readOnly: true
+        - name: profile
+          configMap:
+            name: {{ .Values.engine.profileConfigMap | quote }}
+            items: [{key: profile.json, path: profile.json}]
+        - name: scratch
+          emptyDir: {sizeLimit: 8Gi}
         - name: shm
           emptyDir: {medium: Memory, sizeLimit: 1Gi}
 ---

@@ -24,9 +24,9 @@ def fixture_values() -> dict[str, Any]:
         "ray": {"image": "example.invalid/fixture-ray@sha256:" + "a" * 64},
         "engine": {
             "image": "example.invalid/fixture-engine@sha256:" + "b" * 64,
-            "model": "fixture/model",
-            "revision": "c" * 40,
-            "tokenizerRevision": "d" * 40,
+            "modelClaim": "fixture-model",
+            "profileConfigMap": "fixture-profile",
+            "profileSha256": "c" * 64,
             "credentialsSecret": "fixture-credentials",
         },
     }
@@ -65,6 +65,25 @@ def test_gpu_ownership_and_internal_backend_contract(tmp_path: Path) -> None:
     assert pod["nodeSelector"] == {"finserve.io/pool": "gpu"}
     assert pod["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "1"
     assert engine["spec"]["strategy"]["type"] == "Recreate"
+    assert pod["securityContext"]["runAsUser"] == 10001
+    runtime = pod["containers"][0]
+    assert runtime["command"] == ["python3", "-m", "finserve.registry.engine_entrypoint"]
+    assert runtime["securityContext"]["readOnlyRootFilesystem"]
+    assert runtime["args"][runtime["args"].index("--expected-credential-env") + 1] == (
+        "FINSERVE_ENGINE_API_KEY"
+    )
+    assert runtime["args"][runtime["args"].index("--profile-sha256") + 1] == "c" * 64
+    assert runtime["args"][runtime["args"].index("--expected-base-url") + 1] == (
+        "http://fixture-engine:8000/v1"
+    )
+    mounts = {item["name"]: item for item in runtime["volumeMounts"]}
+    assert mounts["model"]["readOnly"] and mounts["model"]["mountPath"] == "/models"
+    assert mounts["profile"]["readOnly"]
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    assert volumes["model"]["persistentVolumeClaim"] == {
+        "claimName": "fixture-model",
+        "readOnly": True,
+    }
     ray = next(item for item in documents if item["kind"] == "RayService")
     cluster = ray["spec"]["rayClusterConfig"]
     assert cluster["headGroupSpec"]["serviceType"] == "ClusterIP"
@@ -99,7 +118,15 @@ def test_gpu_ownership_and_internal_backend_contract(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "invalid", ["defaults", "mutable_image", "unbounded_workers", "mutable_model"]
+    "invalid",
+    [
+        "defaults",
+        "mutable_image",
+        "unbounded_workers",
+        "missing_profile",
+        "legacy_model",
+        "invalid_secret",
+    ],
 )
 def test_install_values_fail_closed(tmp_path: Path, invalid: str) -> None:
     """An omitted identity, mutable tag or capacity override must fail before installation."""
@@ -110,8 +137,12 @@ def test_install_values_fail_closed(tmp_path: Path, invalid: str) -> None:
         values["engine"]["image"] = "vllm/vllm-openai:latest"
     elif invalid == "unbounded_workers":
         values["ray"]["workers"] = 100
-    else:
+    elif invalid == "legacy_model":
         values["engine"]["revision"] = "main"
+    elif invalid == "invalid_secret":
+        values["engine"]["credentialsSecret"] = "invalid-"
+    else:
+        values["engine"]["profileSha256"] = ""
     result = render(tmp_path, values)
     assert result.returncode != 0 and "schema" in result.stderr
 

@@ -54,7 +54,7 @@ spec:
               env:
                 - name: FINSERVE_ENGINE_API_KEY
                   valueFrom:
-                    secretKeyRef: {name: {{ .Values.engine.credentialsSecret }}, key: api-key}
+                    secretKeyRef: {name: {{ .Values.engine.credentialsSecret | quote }}, key: api-key}
     workerGroupSpecs:
       - groupName: cpu-proxies
         replicas: {{ .Values.ray.workers }}
@@ -90,4 +90,4 @@ spec:
                 env:
                   - name: FINSERVE_ENGINE_API_KEY
                     valueFrom:
-                      secretKeyRef: {name: {{ .Values.engine.credentialsSecret }}, key: api-key}
+                      secretKeyRef: {name: {{ .Values.engine.credentialsSecret | quote }}, key: api-key}

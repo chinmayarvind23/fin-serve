@@ -24,13 +24,34 @@ is not the public FastAPI SSE/Bun API. The application builder is
 engine URL, the served model ID and bounded worker capacity. Worker credentials use
 `FINSERVE_ENGINE_API_KEY`, drawn from the same Secret key as `VLLM_API_KEY`.
 
-Supply an external values file with real image digests, exact model and tokenizer
-commit IDs, and an existing Kubernetes Secret name with an `api-key` key. Empty values,
-mutable image tags and branch revisions fail schema validation. The Ray image must
+Supply an external values file with real image digests, a populated model PVC,
+an immutable profile ConfigMap, its canonical SHA256 and an existing Secret with an
+`api-key` key. Empty identities, mutable image tags and old model-download values
+fail schema validation. The Ray image must
 contain FinServe, Ray 2.58.0, compatible locked dependencies, Python, Bash and wget;
-the engine image must contain the tested vLLM API-server entry point. Both must run as
-UID/GID 1000. The engine cache is bounded ephemeral storage and needs model-download
-egress; private/gated model credentials are a separate deployment prerequisite.
+it runs as UID/GID 1000. The engine image is built by `registry/runtime_build.py` and
+runs as UID/GID 10001. It must include the current verified entrypoint's deployment
+binding flags; older images fail startup instead of bypassing verification.
+
+The PVC root must contain the exact snapshot described by the manifest baked into
+the engine image, readable by UID/GID 10001. The chart mounts it read-only at `/models`.
+The existing immutable ConfigMap contains `profile.json`, a canonical
+`ServingProfileV1` with the internal URL `http://<release>-engine:8000/v1`, the same
+`served_model` as `engine.servedModel`, and
+`credential_env=FINSERVE_ENGINE_API_KEY`. `engine.profileSha256` is `profile.digest()`.
+Model/tokenizer commits, manifests and inference parameters live in that profile.
+The entrypoint checks its hash, endpoint, model and credential name, then rehashes
+the actual snapshot and compares the installed engine version before exec. Startup
+performs no Hub download. A ready PVC and profile remain deployment prerequisites;
+this chart does not fabricate their receipts or upload local model files.
+
+The root filesystem is read-only. Bounded `/tmp` scratch must permit native library
+execution for Triton, and `/dev/shm` has a separate memory-backed bound. PVC access
+modes alone do not enforce read-only use, so both the claim source and container
+mount specify it. Storage-driver support, volume ownership and actual node mount
+flags require cluster validation. See the Kubernetes documentation for
+[volume mounts](https://kubernetes.io/docs/concepts/storage/volumes/) and
+[security contexts](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/).
 
 ```sh
 helm lint infra/kubernetes/workload --namespace finserve -f "$FINSERVE_WORKLOAD_VALUES"

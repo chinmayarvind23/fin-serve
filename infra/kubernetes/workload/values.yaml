@@ -7,12 +7,12 @@ ray:
   workers: 2
 engine:
   image: ""
-  model: ""
-  revision: ""
-  tokenizerRevision: ""
+  # Existing PVC root contains the exact verified snapshot; startup rehashes every file.
+  modelClaim: ""
+  # Existing immutable ConfigMap has profile.json; the digest is canonical ServingProfileV1.
+  profileConfigMap: ""
+  profileSha256: ""
   servedModel: finserve-qwen
   credentialsSecret: ""
-  maxModelLength: 2048
-  maxSequences: 8
   startupSeconds: 900
 evidenceRoleArn: ""

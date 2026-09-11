@@ -356,7 +356,16 @@ def test_entrypoint_verifies_real_files_before_exec(
         assert environment["VLLM_USE_V2_MODEL_RUNNER"] == "0"
 
     monkeypatch.setattr(engine_entrypoint.os, "execve", execute)
-    arguments = ["--profile", str(configured)] + (["--verify-only"] if verify_only else [])
+    arguments = [
+        "--profile",
+        str(configured),
+        "--profile-sha256",
+        serving.digest(),
+        "--expected-model",
+        serving.served_model,
+        "--expected-base-url",
+        serving.base_url,
+    ] + (["--verify-only"] if verify_only else [])
     engine_entrypoint.run(arguments)
     if verify_only:
         observed = json.loads(capsys.readouterr().out)
@@ -367,6 +376,32 @@ def test_entrypoint_verifies_real_files_before_exec(
         assert launched == [engine_arguments(serving, model, "0.29.0")]
     (directory / "model.safetensors").write_bytes(b"xx")
     with pytest.raises(ValueError, match="checksum"):
+        engine_entrypoint.run(arguments)
+
+
+@pytest.mark.parametrize(
+    "option, value, error",
+    [
+        ("--profile-sha256", "f" * 64, "digest"),
+        ("--expected-model", "other-model", "model"),
+        ("--expected-base-url", "http://other:8000/v1", "endpoint"),
+        ("--expected-credential-env", "FINSERVE_ENGINE_API_KEY", "credential"),
+    ],
+)
+def test_launch_binding_fails_before_model_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, option: str, value: str | None, error: str
+) -> None:
+    """Deployment mismatch must fail before touching the model volume or loading GPU packages."""
+    model = manifest()
+    baked, configured = tmp_path / "manifest.json", tmp_path / "profile.json"
+    baked.write_text(model.canonical())
+    configured.write_text(profile(model).canonical())
+    monkeypatch.setattr(engine_entrypoint, "BAKED_MANIFEST", baked)
+    monkeypatch.setattr(engine_entrypoint, "MODEL_DIRECTORY", tmp_path / "missing-model")
+    arguments = ["--profile", str(configured), "--verify-only", option]
+    if value is not None:
+        arguments.append(value)
+    with pytest.raises(ValueError, match=error):
         engine_entrypoint.run(arguments)
 
 

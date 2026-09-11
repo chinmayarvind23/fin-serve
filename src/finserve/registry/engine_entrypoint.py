@@ -120,14 +120,34 @@ def read_bounded(path: Path, maximum_bytes: int) -> bytes:
     return content
 
 
+def verify_launch_binding(profile: ServingProfileV1, arguments: argparse.Namespace) -> None:
+    """Reject mounted-profile drift from the deployment's declared hash, endpoint and auth."""
+    if arguments.profile_sha256 is not None and profile.digest() != arguments.profile_sha256:
+        raise ValueError("mounted serving profile differs from expected digest")
+    if arguments.expected_model is not None and profile.served_model != arguments.expected_model:
+        raise ValueError("mounted serving profile differs from expected model")
+    if arguments.expected_base_url is not None and profile.base_url != arguments.expected_base_url:
+        raise ValueError("mounted serving profile differs from expected endpoint")
+    if (
+        arguments.expected_credential_env is not None
+        and profile.credential_env != arguments.expected_credential_env
+    ):
+        raise ValueError("mounted serving profile differs from expected credential environment")
+
+
 def run(arguments: list[str] | None = None) -> None:
     """CPU verification checks image contents without acquiring a GPU or serving traffic."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, default=Path("/run/finserve/profile.json"))
+    parser.add_argument("--profile-sha256")
+    parser.add_argument("--expected-model")
+    parser.add_argument("--expected-base-url")
+    parser.add_argument("--expected-credential-env")
     parser.add_argument("--verify-only", action="store_true")
     parsed = parser.parse_args(arguments)
     manifest = ModelManifest.model_validate_json(read_bounded(BAKED_MANIFEST, 2 * 1024**2))
     profile = ServingProfileV1.model_validate_json(read_bounded(parsed.profile, 128 * 1024))
+    verify_launch_binding(profile, parsed)
     environment = runtime_environment(profile, os.environ)
     actual = verify_snapshot(MODEL_DIRECTORY, manifest.specification)
     if actual.digest() != manifest.digest():
