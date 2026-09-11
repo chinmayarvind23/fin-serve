@@ -88,13 +88,18 @@ variable "gpu_instance_type" {
   }
 }
 variable "gpu_desired_nodes" {
-  description = "0 keeps staging GPU idle; set 1 before installing the GPU engine workload."
+  description = "Initial GPU desired size only; subsequent desired-size updates belong to the autoscaler or explicit EKS operations."
   type        = number
   default     = 0
   validation {
     condition     = contains([0, 1], var.gpu_desired_nodes)
     error_message = "GPU desired capacity is bounded to zero or one node."
   }
+}
+variable "enable_node_autoscaling" {
+  description = "Create scoped Cluster Autoscaler IRSA and ASG discovery tags; the matching controller is installed separately."
+  type        = bool
+  default     = false
 }
 variable "postgres_version" {
   description = "Exact supported PostgreSQL engine minor; validate regional availability before plan."

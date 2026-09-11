@@ -81,8 +81,10 @@ resource "aws_eks_node_group" "cpu" {
   scaling_config {
     desired_size = 2
     min_size     = 2
-    max_size     = 2
+    max_size     = 3
   }
+  # Desired size is a bootstrap input; the node controller owns subsequent scaling.
+  lifecycle { ignore_changes = [scaling_config[0].desired_size] }
   update_config { max_unavailable = 1 }
   launch_template {
     id      = aws_launch_template.nodes["cpu"].id
@@ -94,13 +96,17 @@ resource "aws_eks_node_group" "gpu" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "gpu"
   node_role_arn   = aws_iam_role.nodes.arn
-  subnet_ids      = [for subnet in aws_subnet.private : subnet.id]
+  # A retained zonal model volume must remain mountable after the group returns from zero.
+  subnet_ids      = [aws_subnet.private["0"].id]
   instance_types  = [var.gpu_instance_type]
   ami_type        = "AL2023_x86_64_NVIDIA"
   release_version = var.gpu_ami_release_version
   version         = var.kubernetes_version
   capacity_type   = "ON_DEMAND"
-  labels          = { "finserve.io/pool" = "gpu" }
+  labels = {
+    "finserve.io/pool"              = "gpu"
+    "k8s.amazonaws.com/accelerator" = startswith(var.gpu_instance_type, "g5.") ? "nvidia-a10g" : "nvidia-l4"
+  }
   taint {
     key    = "nvidia.com/gpu"
     value  = "true"
@@ -111,6 +117,7 @@ resource "aws_eks_node_group" "gpu" {
     min_size     = 0
     max_size     = 1
   }
+  lifecycle { ignore_changes = [scaling_config[0].desired_size] }
   update_config { max_unavailable = 1 }
   launch_template {
     id      = aws_launch_template.nodes["gpu"].id

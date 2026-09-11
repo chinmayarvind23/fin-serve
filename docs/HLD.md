@@ -62,3 +62,8 @@ Local experiments include a real Ray-to-GPU path, 6,144 measured text requests, 
 ## CPU worker scaling boundary
 
 The Kubernetes chart offers opt-in KubeRay V2 scaling between one and two CPU worker Pods per RayCluster. Ray actor/task demand drives this loop. The current fixed router and one proxy per engine fit on a single worker; higher HTTP load alone does not add actors or GPUs. The single routing authority and engine admission limits remain intact. Two fixed workers remain the default. GPU engine scaling, node scaling and live scaling evidence are still incomplete. The dedicated head account has namespaced API access; worker and engine accounts remain tokenless. RayService upgrades can overlap clusters, so the per-cluster maximum does not bound total upgrade resources. See infra/kubernetes/README.md for the resource budget and validation scope.
+
+
+## Node scaling foundation
+
+The AWS foundation now separates node desired-size ownership from Terraform configuration. CPU nodes are bounded at two to three; GPU nodes at zero to one in the first configured AZ, matching retained zonal model storage. Terraform initializes desired sizes and continues to own bounds, while subsequent desired-size changes belong to a controller or explicit EKS operations. Opt-in node autoscaling creates scoped IRSA and discovery metadata on actual managed ASGs. It does not install Cluster Autoscaler, scale model replicas, or establish live capacity evidence. The separate controller and pending-Pod/drain tests remain required.

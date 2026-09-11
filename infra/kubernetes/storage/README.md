@@ -15,6 +15,9 @@ kubectl -n finserve get pvc finserve-model
 `WaitForFirstConsumer` intentionally leaves the claim Pending until a consumer
 can be scheduled. The first population Pod must use the engine's GPU pool node
 selector and taint toleration, even though copying files consumes no GPU resource.
+The foundation now pins GPU nodes to the first configured AZ so replacement nodes
+can return to the volume's zone. For an existing deployment, confirm the retained
+PV matches the `gpu_availability_zone` output before replacing a multi-AZ GPU group.
 That places the zonal volume where an engine can mount it. Do not bind the claim
 through a CPU-only bootstrap Pod in another AZ. A later GPU node in another AZ
 cannot mount that EBS volume; node availability and volume topology require an
