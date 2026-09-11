@@ -17,7 +17,7 @@ class BodyLimit:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Preserve disconnect semantics after replaying the bounded request body once."""
         if scope["type"] == "http":
-            scope.setdefault("state", {})["finserve_received"] = time.perf_counter()
+            scope.setdefault("state", {}).setdefault("finserve_received", time.perf_counter())
         if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
             await self.app(scope, receive, send)
             return
