@@ -85,6 +85,7 @@ async def test_response_limit_and_total_deadline_close_transport(
     """An overall deadline must stop a continuously trickling response and close it."""
     stream = AdversarialBody(oversized)
     real_timeout = asyncio.timeout
+
     def short_timeout(delay: float) -> asyncio.Timeout:
         """Accelerate the deadline without modifying production duration semantics."""
         assert delay == 30

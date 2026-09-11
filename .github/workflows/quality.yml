@@ -12,9 +12,21 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.8.4"
-      - run: uv sync --frozen --extra reference
+      - run: uv sync --frozen --extra reference --extra multimodal --extra cache
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync pyright
       - run: uv run --no-sync pytest --cov=finserve --cov-report=term-missing --cov-fail-under=85
       - run: uv run --no-sync python scripts/check_semantic_mutations.py --output "$RUNNER_TEMP/finserve-mutations"
+  edge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun test apps/api
+      - run: bun run build

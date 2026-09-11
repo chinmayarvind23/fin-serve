@@ -137,9 +137,7 @@ def test_failed_benchmark_retains_failure_manifest(
 ) -> None:
     """Missing optional runtime metadata is still a recorded failed experiment, not an empty run."""
     directory = tmp_path / "failed-run"
-    with patch(
-        "finserve.multimodal.benchmark.importlib.metadata.version", side_effect=failure
-    ):
+    with patch("finserve.multimodal.benchmark.importlib.metadata.version", side_effect=failure):
         with pytest.raises(failure):
             run_visual_benchmark(directory, repetitions=1)
     manifest = json.loads((directory / "manifest.json").read_text())
