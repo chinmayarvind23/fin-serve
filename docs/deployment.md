@@ -8,6 +8,21 @@ The [Compose stack](../infra/docker/README.md) runs FastAPI and ephemeral Redis,
 
 The runtime producer fetches a pinned model snapshot, verifies each file, builds from an exact Git archive and records the resulting image identities. Its entrypoint rechecks the mounted model and canonical profile before engine startup. Native experiments completed before this producer keep their original undeclared image fields.
 
+Managed launch/stop stages bind those upstream receipts to the exact Docker image,
+container ID and start time. Readiness uses a real bounded inference stream;
+completed replay checks the existing start without creating a replacement.
+The local cold-start proof took 152.970 seconds and verified reconciliation and
+cleanup. That measurement is distinct from warm rollback.
+
+## Hugging Face CPU Space
+
+The [Space package](../infra/huggingface/README.md) reuses the Bun explorer and
+Python read service. An explicit allowlist includes source, locks and six committed
+aggregate assets. Its public landing page states the failed quality gate; the
+authenticated registry starts empty on ephemeral storage. Local container checks
+cover actual HTTP, auth/body limits and normal/faulted child shutdown. Hosted
+upload and browser visual verification remain pending.
+
 ## AWS and Kubernetes
 
 The [Terraform foundation](../infra/terraform/README.md) describes private EKS networking, bounded CPU/GPU groups, RDS, Redis, S3, ECR and workload identities. The [Kubernetes stages](../infra/kubernetes/README.md) install KubeRay/device-plugin operators before Ray and GPU engine workloads. The current chart serves one external GPU engine through CPU Ray proxies; extra proxies are not extra model capacity.

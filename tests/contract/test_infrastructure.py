@@ -231,3 +231,22 @@ def test_enabled_gateway_requires_deployment_identity(tmp_path: Path, field: str
     values["gateway"][field] = ""
     result = render(tmp_path, values)
     assert result.returncode != 0 and "schema" in result.stderr
+
+
+def test_model_storage_preserves_weights_and_waits_for_consumer_topology() -> None:
+    """A claim cannot silently bind in the wrong AZ, lose encryption or delete retained weights."""
+    yaml = pytest.importorskip("yaml")
+    manifest = Path(__file__).resolve().parents[2] / "infra/kubernetes/storage/model-storage.yaml"
+    storage, claim = list(yaml.safe_load_all(manifest.read_text()))
+    assert storage["provisioner"] == "ebs.csi.aws.com"
+    assert storage["parameters"]["encrypted"] == "true"
+    assert storage["parameters"]["type"] == "gp3"
+    assert storage["volumeBindingMode"] == "WaitForFirstConsumer"
+    assert storage["reclaimPolicy"] == "Retain"
+    assert (
+        storage["metadata"]["annotations"]["storageclass.kubernetes.io/is-default-class"] == "false"
+    )
+    assert claim["spec"]["storageClassName"] == storage["metadata"]["name"]
+    assert claim["metadata"]["namespace"] == "finserve"
+    assert claim["spec"]["accessModes"] == ["ReadWriteOnce"]
+    assert claim["spec"]["resources"]["requests"]["storage"] == "20Gi"

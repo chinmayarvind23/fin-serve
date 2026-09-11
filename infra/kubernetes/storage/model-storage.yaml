@@ -1,0 +1,28 @@
+# This class does not change the cluster default or delete retained weights on PVC removal.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: finserve-model-gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  csi.storage.k8s.io/fstype: ext4
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+---
+# Bootstrap with a GPU-pool consumer so the zonal volume follows the engine's topology.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: finserve-model
+  namespace: finserve
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: finserve-model-gp3
+  resources:
+    requests:
+      storage: 20Gi

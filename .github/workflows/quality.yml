@@ -48,6 +48,17 @@ jobs:
           "$FINSERVE_HELM" repo add kuberay https://ray-project.github.io/kuberay-helm/
           "$FINSERVE_HELM" repo add nvidia https://nvidia.github.io/k8s-device-plugin
           "$FINSERVE_HELM" dependency build infra/kubernetes/operators
+      - name: Validate the pinned Terraform foundation without AWS calls
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/finserve-terraform
+        run: |
+          curl --fail --silent --show-error --location https://releases.hashicorp.com/terraform/1.16.2/terraform_1.16.2_linux_amd64.zip -o "$RUNNER_TEMP/terraform.zip"
+          echo "0d17011f0c4664539b164b044903d04e296c86c13cb9f28040076c65cfb3985a  $RUNNER_TEMP/terraform.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/terraform.zip" -d "$RUNNER_TEMP/terraform-cli"
+          "$RUNNER_TEMP/terraform-cli/terraform" -chdir=infra/terraform/foundation init -backend=false -input=false -lockfile=readonly
+          "$RUNNER_TEMP/terraform-cli/terraform" -chdir=infra/terraform/foundation fmt -check -recursive
+          "$RUNNER_TEMP/terraform-cli/terraform" -chdir=infra/terraform/foundation validate
+          "$RUNNER_TEMP/terraform-cli/terraform" -chdir=infra/terraform/foundation test
       - name: Validate actual Helm output and RayService schema
         run: >-
           uv run --isolated --no-project --with pytest --with pytest-asyncio --with pyyaml --with jsonschema

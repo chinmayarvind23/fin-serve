@@ -16,7 +16,7 @@ variables {
   postgres_version        = "17.6"
   redis_auth_token        = "fixtureOnlyNotASecret00000000000000"
   addon_versions = {
-    coredns = "v1.12.0-eksbuild.1", kube_proxy = "v1.35.0-eksbuild.1", vpc_cni = "v1.20.0-eksbuild.1"
+    coredns = "v1.12.0-eksbuild.1", kube_proxy = "v1.35.0-eksbuild.1", vpc_cni = "v1.20.0-eksbuild.1", ebs_csi = "v1.60.0-eksbuild.1"
   }
 }
 run "private_bounded_foundation" {
@@ -41,9 +41,35 @@ run "private_bounded_foundation" {
     condition     = aws_s3_bucket_public_access_block.evidence.block_public_policy && aws_s3_bucket_versioning.evidence.versioning_configuration[0].status == "Enabled"
     error_message = "Evidence must block public policies and retain versions."
   }
+  assert {
+    condition     = aws_eks_addon.ebs_csi.addon_name == "aws-ebs-csi-driver" && aws_eks_addon.ebs_csi.addon_version == var.addon_versions.ebs_csi
+    error_message = "Model volumes require the explicitly pinned standard EBS CSI add-on."
+  }
+  assert {
+    condition     = aws_iam_role_policy_attachment.ebs_csi.role == aws_iam_role.ebs_csi.name && aws_iam_role_policy_attachment.ebs_csi.policy_arn == "arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicyV2"
+    error_message = "The managed-volume policy belongs to the dedicated controller role."
+  }
 }
 run "reject_unbounded_gpu_input" {
   command = plan
   variables { gpu_desired_nodes = 20 }
   expect_failures = [var.gpu_desired_nodes]
+}
+run "reject_unpinned_storage_driver" {
+  command = plan
+  variables {
+    addon_versions = {
+      coredns = "v1.12.0-eksbuild.1", kube_proxy = "v1.35.0-eksbuild.1", vpc_cni = "v1.20.0-eksbuild.1", ebs_csi = "latest"
+    }
+  }
+  expect_failures = [var.addon_versions]
+}
+run "reject_malformed_addon_version" {
+  command = plan
+  variables {
+    addon_versions = {
+      coredns = "v1.12.0-eksbuild.1", kube_proxy = "v1.35.0-eksbuild.1", vpc_cni = "v1.20.0-eksbuild.1", ebs_csi = "v1 not-a-version-eksbuild.1"
+    }
+  }
+  expect_failures = [var.addon_versions]
 }

@@ -72,9 +72,9 @@ variable "gpu_ami_release_version" {
 }
 variable "addon_versions" {
   description = "Exact EKS add-on builds; caller must resolve compatibility before plan/apply."
-  type        = object({ coredns = string, kube_proxy = string, vpc_cni = string })
+  type        = object({ coredns = string, kube_proxy = string, vpc_cni = string, ebs_csi = string })
   validation {
-    condition     = alltrue([for value in values(var.addon_versions) : can(regex("^v[0-9].*-eksbuild\\.[0-9]+$", value))])
+    condition     = alltrue([for value in values(var.addon_versions) : can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+-eksbuild\\.[0-9]+$", value))])
     error_message = "Each add-on must use an exact vX.Y.Z-eksbuild.N version."
   }
 }

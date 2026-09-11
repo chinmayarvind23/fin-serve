@@ -19,7 +19,13 @@ quotas, costs or deployment health. Store `TF_DATA_DIR`, plans and state outside
 source tree. The checked dependency lock records provider checksums.
 
 Before an authenticated plan, resolve exact EKS AMI releases, add-on builds and
-PostgreSQL minor availability in the selected region. Supply two AZs, intended AWS
+PostgreSQL minor availability in the selected region. `addon_versions` requires
+`coredns`, `kube_proxy`, `vpc_cni` and `ebs_csi`; mock test builds are fixtures.
+The EBS CSI controller has its own OIDC service-account role, with no volume
+permissions added to the EC2 node role. Confirm the V2 managed policy ARN in the
+[AWS policy reference](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonEBSCSIDriverPolicyV2.html)
+during preflight; AWS's setup examples currently show a different policy path.
+Supply two AZs, intended AWS
 account ID and an existing operator role. `variables.tf` documents every input.
 Provide the Redis token through a secret input channel; it is sensitive in output
 but exists in Terraform state. Use an existing restricted S3 state bucket with versioning,
@@ -46,3 +52,5 @@ require deliberate teardown handling; the evidence bucket and ECR repository do 
 force-delete contents.
 
 Install the [Kubernetes stages](../kubernetes/README.md) only after foundation readiness.
+The [model storage stage](../kubernetes/storage/README.md) defines an encrypted
+retained PVC; verified snapshot population and actual mount checks are separate.

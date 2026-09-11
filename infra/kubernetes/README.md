@@ -18,6 +18,9 @@ wait for the RayService CRD and operator readiness, then install the workload in
 **finserve**. Namespace identities are intentional: network policy allows operator
 dashboard access, and IRSA is scoped to `finserve:finserve-evidence`.
 An authenticated private EKS context and network access are prerequisites.
+The [model storage stage](storage/README.md) supplies an explicit encrypted gp3
+claim after the foundation's pinned EBS CSI add-on is healthy. Snapshot population
+must use the GPU pool's topology and retain a verified file receipt.
 
 The workload has one separately managed vLLM engine Deployment owning one physical
 GPU. Its Ray head and two CPU worker Pods own zero GPUs. Ray's internal NDJSON endpoint
