@@ -6,8 +6,9 @@ Commands run from the repository root. Shell examples use POSIX syntax; Windows 
 
 ```sh
 uv sync --locked --extra reference --extra multimodal --extra cache --extra registry \
-  --extra visual-worker --extra visual-proto --extra explorer --extra vision
+  --extra visual-worker --extra visual-proto --extra explorer --extra vision --extra telemetry
 uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
 uv run --no-sync pyright
 uv run --no-sync pytest --cov=finserve --cov-branch --cov-fail-under=85
 bun install --frozen-lockfile

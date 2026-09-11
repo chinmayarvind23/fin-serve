@@ -6,4 +6,4 @@ The registry stores immutable model, run, quality and revision references in SQL
 
 `pipeline.py` and `lifecycle.py` share gate and deployment behavior with the Airflow DAG. `explorer.py` exposes bounded, authenticated, read-only GraphQL; it cannot mutate a deployment. `annotations.py` recomputes GPU and quality details for the evidence UI.
 
-Use the commands in [deployment](../../../docs/deployment.md), [evaluation](../../../docs/evaluation.md) and [API documentation](../../../docs/api.md). The [low-level design](../../../docs/LLD.md) defines ownership and persistence boundaries. Full artifact production through cloud activation remains in progress; the existing Airflow evidence DAG is not proof of that complete path.
+Use the commands in [deployment](../../../docs/deployment.md), [evaluation](../../../docs/evaluation.md) and [API documentation](../../../docs/api-contracts.md). The [low-level design](../../../docs/LLD.md) defines ownership and persistence boundaries. Full artifact production through cloud activation remains in progress; the existing Airflow evidence DAG is not proof of that complete path.
