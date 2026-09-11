@@ -298,6 +298,42 @@ class WarmRouteStore:
             self._save(connection, state)
             return state
 
+    def acknowledge_baseline(
+        self,
+        control: DeploymentStore,
+        deployment_id: str,
+        revision: Revision,
+        generation: int,
+        health: HealthObservation,
+    ) -> DeploymentState:
+        """Fence current baseline traffic while verifying or initializing controller truth."""
+        if control.path == self.path:
+            raise ValueError("route and control stores require separate database files")
+        with self.transaction() as connection:
+            route = self._snapshot(connection, deployment_id)
+            if (
+                route.revision_id != revision.revision_id
+                or route.revision_digest != revision.digest()
+                or route.generation != generation
+                or not health.verifies(revision)
+            ):
+                raise ControlConflict("baseline acknowledgment differs from current traffic")
+            control.register_revision(revision)
+            try:
+                state = control.deployment(deployment_id)
+            except KeyError:
+                if generation != 0:
+                    raise ControlConflict("missing controller for noninitial route") from None
+                state = control.bootstrap(deployment_id, revision.revision_id, health)
+            if (
+                state.generation != generation
+                or state.active_revision != revision.revision_id
+                or state.known_good_revision != revision.revision_id
+                or state.rollback_id is not None
+            ):
+                raise ControlConflict("baseline is not the stable controller revision")
+            return state
+
     def apply(self, request: ApplyRequest) -> RouteSnapshot:
         """The shared route CAS fences promotion and rollback from separate intent stores."""
         backend = self.backend(request.target.revision_id)

@@ -1,5 +1,13 @@
 # Evidence lifecycle
 
+`finserve_producer_lifecycle` is the separate initial local producer workflow. It reads
+`FINSERVE_PRODUCER_REQUEST` (`ProducerExecution`) using the same registry/artifact settings,
+requires frozen rollout settings and a runtime `FINSERVE_API_KEY`, and connects collection
+through probation with failure-preserving cleanup. It requires an existing traffic gateway,
+existing route/control stores and an unused deployment ID at generation zero. Repeated
+deployment support and a complete live GPU Airflow run remain pending. See
+[the producer workflow](../../docs/airflow-pipeline.md#local-producer-workflow).
+
 `finserve_evidence_lifecycle` registers existing run artifacts, recomputes the canonical
 profile gate, and invokes a server-configured deployment adapter only after approval.
 The DAG uses the Airflow 3 public SDK. Install the `orchestration` extra in Linux.

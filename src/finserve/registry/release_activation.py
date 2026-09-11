@@ -3,15 +3,73 @@
 from functools import partial
 
 from finserve.contracts.deployment import DeploymentState
+from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.registry.artifacts import ArtifactStore
 from finserve.registry.lifecycle import LifecycleSpec
 from finserve.registry.metadata import Registry
 from finserve.registry.model_assets import owned_disk
-from finserve.registry.release_gate import evaluate_gate
+from finserve.registry.release_gate import GateRequest, evaluate_gate
 from finserve.reliability.monitor import ProbeMonitor
 from finserve.reliability.promotion import PromotionDecision
-from finserve.reliability.rollback import ApplyRequest, DeploymentStore
-from finserve.reliability.warm_routes import WarmRouteAdapter
+from finserve.reliability.rollback import ApplyRequest, ControlConflict, DeploymentStore
+from finserve.reliability.warm_routes import BackendConfiguration, WarmBackend, WarmRouteAdapter
+
+
+async def prepare_release(
+    registry: Registry,
+    artifacts: ArtifactStore,
+    job_id: str,
+    control: DeploymentStore,
+    adapter: WarmRouteAdapter,
+) -> DeploymentState:
+    """Only approved canonical evidence can register backends and seed initial baseline traffic."""
+
+    def prepare() -> LifecycleSpec:
+        """Resolve profiles from immutable gate input; never accept a task-supplied endpoint."""
+        if evaluate_gate(registry, artifacts, job_id).status != "approved":
+            raise ValueError("route preparation requires approved canonical evidence")
+        spec = LifecycleSpec.model_validate_json(registry.specification(job_id))
+        request = GateRequest.model_validate_json(registry.gate_input(job_id))
+        for revision, reference in (
+            (registry.revision(spec.expected_revision), request.baseline_profile),
+            (spec.target, request.candidate_profile),
+        ):
+            profile = ServingProfileV1.model_validate_json(artifacts.get(reference))
+            adapter.store.register(
+                WarmBackend(
+                    revision=revision,
+                    serving_profile=profile,
+                    configuration=BackendConfiguration(
+                        base_url=profile.base_url,
+                        model=profile.served_model,
+                    ),
+                )
+            )
+        try:
+            route = adapter.store.snapshot(spec.deployment_id)
+        except KeyError:
+            if spec.expected_generation != 0:
+                raise ControlConflict("missing baseline route for noninitial release") from None
+            route = adapter.store.bootstrap(spec.deployment_id, spec.expected_revision)
+        if (route.revision_id, route.generation) != (
+            spec.expected_revision,
+            spec.expected_generation,
+        ):
+            raise ControlConflict("release baseline differs from current traffic")
+        return spec
+
+    spec = await owned_disk(prepare)
+    health = await adapter.health(spec.deployment_id)
+    baseline = await owned_disk(lambda: registry.revision(spec.expected_revision))
+    return await owned_disk(
+        lambda: adapter.store.acknowledge_baseline(
+            control,
+            spec.deployment_id,
+            baseline,
+            spec.expected_generation,
+            health,
+        )
+    )
 
 
 def approved_activation(

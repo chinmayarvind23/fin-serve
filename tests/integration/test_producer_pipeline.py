@@ -10,6 +10,8 @@ from test_managed_runtime import specification
 
 from finserve.benchmark.runner import RunConfig
 from finserve.benchmark.workload import WorkItem, Workload
+from finserve.contracts.deployment import HealthObservation
+from finserve.contracts.rollout import RolloutSettings
 from finserve.evaluation.quality import default_suite
 from finserve.registry.engine_entrypoint import VLLMParameters
 from finserve.registry.metadata import RegistryConflict
@@ -76,6 +78,8 @@ def test_task_reopen_fetch_replay_and_frozen_cleanup(
         return httpx.AsyncClient(transport=httpx.MockTransport(response))
 
     monkeypatch.setattr("finserve.registry.producer_pipeline.collection_client", client)
+    with pytest.raises(ValueError, match="requires frozen rollout"):
+        freeze_stage(require_rollout=True)
     assert freeze_stage() == freeze_stage() == producer.job_id
     assert collection_stage(producer.job_id, "fetch") == producer.job_id
     first_calls = calls
@@ -96,6 +100,38 @@ def test_task_reopen_fetch_replay_and_frozen_cleanup(
         "baseline": "not_launched",
         "candidate": "not_launched",
     }
+    next_job = producer.model_copy(update={"job_id": "next", "expected_generation": 1})
+    next_execution = execution.model_copy(
+        update={
+            "producer": next_job,
+            "rollout": RolloutSettings(traffic_url="http://traffic"),
+        }
+    )
+    request.write_text(next_execution.model_dump_json())
+    with pytest.raises(ValueError, match="initial deployment"):
+        freeze_stage()
+    controller = DeploymentStore(control)
+    controller.register_revision(template.revision)
+    controller.bootstrap(
+        producer.deployment_id,
+        template.revision.revision_id,
+        HealthObservation(
+            revision_id=template.revision.revision_id,
+            revision_digest=template.revision.digest(),
+            ready=True,
+            smoke_passed=True,
+        ),
+    )
+    next_execution = next_execution.model_copy(
+        update={
+            "producer": next_job.model_copy(update={"expected_generation": 0}),
+        }
+    )
+    request.write_text(next_execution.model_dump_json())
+    with pytest.raises(ValueError, match="unused deployment"):
+        freeze_stage()
+    with journal_runtime() as journal:
+        assert journal.history("next:producer") == []
     routes.unlink()
     with pytest.raises(FileNotFoundError):
         cleanup_stage(producer.job_id)

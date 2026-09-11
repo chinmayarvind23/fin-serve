@@ -19,9 +19,11 @@ rejects collection attempts or retained observations predating the plan. It cons
 gate inputs from raw outputs; callers do not supply a quality result file. Replay performs no
 inference. The original directory-based registration entry point remains for existing evidence.
 
-The managed entry point is tested from fixture launch and collection through canonical gate
-rejection. It is not yet wired into the full Airflow producer DAG, and does not acknowledge
-traffic activation or complete probation.
+The separate `finserve_producer_lifecycle` DAG now connects collection, canonical registration,
+evaluation, route preparation, deployment, acknowledgment, probation and cleanup for an initial
+local deployment. Producer integration tests cover rejected evidence and a synthetic approved
+release. Actual Airflow execution with synthetic task callbacks verifies success and gate-failure
+cleanup. A full live GPU run through Airflow remains pending.
 
 The trusted worker configures `FINSERVE_PIPELINE_REQUEST`, `FINSERVE_REGISTRY_URL` and `FINSERVE_ARTIFACT_ROOT`. The request identifies existing baseline/candidate run directories, raw quality outputs, a frozen suite, immutable revisions, policy and both canonical serving profiles. Database and artifact references must retain their original namespace across retries.
 
@@ -39,9 +41,29 @@ It exits 0 for approval, 2 for rejection and 3 for invalid evidence. The manual 
 
 Deployment loads the server-configured `FINSERVE_DEPLOYMENT_ADAPTER` factory and recomputes the gate before invoking it. Lifecycle leases, immutable request identities and adapter idempotency govern retries. Uncertain external action is reconciled through exact-revision health rather than blindly repeated. A decision supplied by an arbitrary caller is not an authorization capability.
 
-The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images or start pods. After lifecycle promotion, `release_activation.acknowledge_release` recomputes the canonical gate, verifies the recorded lifecycle decision, probes current traffic and records the exact activation in the rollback controller. It requires the persisted lifecycle route-action receipt and holds the route write lock during controller acknowledgment. Repeating it does not increment the generation again. The previous known-good revision remains unchanged. After a complete healthy monitor window, `release_activation.complete_probation` rechecks approval and current traffic before advancing known-good with retained observation evidence. Wiring these calls into the full producer DAG remains pending. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
+The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images or start pods. After lifecycle promotion, `release_activation.acknowledge_release` recomputes the canonical gate, verifies the recorded lifecycle decision, probes current traffic and records the exact activation in the rollback controller. It requires the persisted lifecycle route-action receipt and holds the route write lock during controller acknowledgment. Repeating it does not increment the generation again. The previous known-good revision remains unchanged. After a complete healthy monitor window, `release_activation.complete_probation` rechecks approval and current traffic before advancing known-good with retained observation evidence. The initial local producer DAG now calls these stages; repeated-deployment support and full live GPU execution remain pending. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
 
-## Producer integration still to complete
+## Local producer workflow
+
+The producer DAG has 18 tasks. It serializes fetch, image build, plan freeze and both cohorts'
+launch/quality/performance stages. After gate approval, it registers the verified profiles,
+selects the initial baseline, checks actual traffic health and seeds controller state under a
+route fence. Separate tasks activate the candidate, acknowledge the exact action and run
+probation. Credentials come from `FINSERVE_API_KEY` at runtime; the request freezes a `rollout`
+object containing `traffic_url` and bounded probe settings. A missing rollout object fails
+before collection. The traffic gateway must already run against the same route store and
+deployment ID. These tasks do not provision the gateway or cloud resources.
+
+`cleanup_unused` uses `all_done` and depends on the collection and release chain. The terminal
+`release_complete` task requires both probation and cleanup to succeed, so cleanup cannot hide
+an upstream failure. This follows Airflow's [leaf-task status semantics](https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/dag-run.html).
+Ambiguous launches and failed/unacknowledged cutovers still require reconciliation.
+
+The current producer creates new baseline and candidate identities per job. It therefore
+accepts only an unused deployment ID at generation zero, checked before collection. Updating an
+existing deployment requires a subsequent extension to reuse its stable baseline launch and
+evidence; that work remains part of the project scope. Both warm cohorts require sufficient
+GPU memory even though tasks execute serially.
 
 `producer_pipeline.freeze_stage()` reads `FINSERVE_PRODUCER_REQUEST`, a server-owned JSON
 `ProducerExecution` containing `producer` (`ProducerInput`), `routes` and `control`. The read
@@ -54,8 +76,7 @@ producer action. `cleanup_stage(job_id)` uses the frozen route/control paths, ig
 changes to the request file, and refuses missing or recreated stores. Every store transaction
 opens with SQLite `mode=rw` and verifies identity before reading protected state. It stops only verified never-served
 producer runtimes. The registry and artifact environment must retain their original namespace
-across tasks. These callable entries are verified with actual fixture-byte fetch and replay;
-the complete DAG and rollout tail are still pending.
+across tasks. These callable entries are verified with actual fixture-byte fetch and replay.
 
 `producer_runtime.freeze_producer` now freezes server-owned source/model inputs, paired typed
 engine configurations, load, suite, policy and workspace. `produce_step` accepts that job ID
@@ -66,11 +87,10 @@ the verified build fills them. Hardware must be declared. Ports must be distinct
 to loopback. The implementation currently supports the pinned local vLLM/Docker runtime.
 
 The task runtime is tested from actual fixture-byte fetch through synthetic Docker build and
-launch, real collector protocol handling, registration and unchanged gate rejection. The
-next wiring must include failure cleanup and the activation/probation tail before exposing
-the complete producer DAG. Both warm cohorts require sufficient host GPU capacity; task
-serialization does not make their combined resident memory disappear.
+launch, real collector protocol handling, registration, rejection and approved fixture rollout.
+The approved fixture uses an explicit answer oracle and broad predeclared timing thresholds;
+it is an orchestration test, not evidence of model quality or performance.
 
-Model fetch/verification and committed-source runtime build APIs now run locally. Actual image preflight, GPU measurement and canonical rejection evidence are retained. These producer steps are not yet Airflow tasks: the current DAG consumes their completed artifacts.
+Model fetch/verification and committed-source runtime build APIs run locally and now have producer DAG tasks. Earlier actual image preflight, GPU measurement and canonical rejection evidence remain separate from scheduler fixtures.
 
-The local producer implements durable model/image/quality receipts, managed runtime startup and cleanup, and frozen performance collection bound to a runtime start. Remaining work is to connect these stages into the full Airflow producer DAG with image publication where required, controller acknowledgment, probation and rollback wiring, then exercise that complete path. The 32-case release suite remains frozen. A three-case development smoke cannot substitute for it, and failed quality cannot be waived to demonstrate activation.
+Remaining work includes reuse of existing stable baselines, live GPU execution of the complete DAG, image publication where required and cloud deployment. The 32-case release suite remains frozen. A three-case development smoke cannot substitute for it, and failed quality cannot be waived to demonstrate activation.

@@ -1,6 +1,7 @@
 """Run producer task dispatch through actual collectors with explicit synthetic build scope."""
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -13,12 +14,15 @@ from finserve.benchmark.gpu import TelemetrySample
 from finserve.benchmark.runner import RunConfig
 from finserve.benchmark.workload import WorkItem, Workload
 from finserve.contracts.model_assets import ModelManifest
+from finserve.contracts.rollout import RolloutSettings
 from finserve.evaluation.quality import default_suite
 from finserve.registry.artifacts import LocalArtifactStore
 from finserve.registry.engine_entrypoint import VLLMParameters
 from finserve.registry.managed_runtime import DockerRuntime
 from finserve.registry.metadata import Registry, RegistryConflict
 from finserve.registry.produced_release import register_produced_release
+from finserve.registry.producer_pipeline import ProducerExecution, freeze_stage
+from finserve.registry.producer_rollout import rollout_stage
 from finserve.registry.producer_runtime import (
     ProducerEngine,
     ProducerInput,
@@ -38,9 +42,11 @@ from finserve.reliability.warm_routes import WarmRouteStore
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("rollout", [False, True])
 async def test_producer_derives_actual_build_and_runs_collectors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    rollout: bool,
 ) -> None:
     """Freeze->fetch->build->launch/collect->gate rejects wrong fixture answers without cutover."""
     template = specification(tmp_path)
@@ -65,11 +71,38 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                 model="fixture", hardware="fixture-cpu", requests=4, warmup=1, concurrency=2
             ),
             suite=default_suite(),
-            policy=PromotionPolicy(),
+            policy=PromotionPolicy(
+                version="synthetic-orchestration-fixture",
+                minimum_requests_per_second_ratio=0.001,
+                minimum_tokens_per_second_ratio=0.001,
+                maximum_client_ttft_ratio=1000,
+                maximum_e2e_p95_ratio=1000,
+            ),
             repository=REPOSITORY,
             workspace=tmp_path / "work",
         )
         assert freeze_producer(journal, spec) == spec.job_id
+        routes = WarmRouteStore(tmp_path / "routes.sqlite")
+        control = DeploymentStore(tmp_path / "control.sqlite")
+        execution = ProducerExecution(
+            producer=spec,
+            routes=routes.path,
+            control=control.path,
+            rollout=RolloutSettings(
+                traffic_url="http://traffic",
+                maximum_probes=3,
+                interval_seconds=0.1,
+                slow_probe_seconds=5,
+            ),
+        )
+        request_file = tmp_path / "producer.json"
+        request_file.write_text(execution.model_dump_json())
+        monkeypatch.setenv("FINSERVE_PRODUCER_REQUEST", str(request_file))
+        monkeypatch.setenv(
+            "FINSERVE_REGISTRY_URL", "sqlite:///" + str(tmp_path / "registry.sqlite")
+        )
+        monkeypatch.setenv("FINSERVE_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
+        assert await asyncio.to_thread(freeze_stage) == spec.job_id
         with pytest.raises(RegistryConflict):
             freeze_producer(journal, spec.model_copy(update={"expected_generation": 1}))
         calls = 0
@@ -80,6 +113,31 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             calls += 1
             if request.url.path.endswith("/config.json"):
                 return httpx.Response(200, content=b'{"model_type":"fixture"}')
+            if rollout and request.method == "POST":
+                prompt = json.loads(request.content).get("prompt", "")
+                # Deterministic oracle is only a transport fixture, never model quality evidence.
+                answer = next(
+                    (case.expected for case in spec.suite.cases if case.prompt == prompt), "hello"
+                )
+                headers = {"content-type": "text/event-stream"}
+                if request.url.host == "traffic":
+                    route = routes.snapshot(spec.deployment_id)
+                    headers.update(
+                        {
+                            "x-finserve-revision": route.revision_id,
+                            "x-finserve-revision-digest": route.revision_digest,
+                            "x-finserve-route-generation": str(route.generation),
+                        }
+                    )
+                event = json.dumps(
+                    {
+                        "choices": [{"index": 0, "text": answer, "finish_reason": "stop"}],
+                        "usage": {"completion_tokens": 1},
+                    }
+                )
+                return httpx.Response(
+                    200, headers=headers, content="data: " + event + "\n\ndata: [DONE]\n\n"
+                )
             return handler(request)
 
         def build(
@@ -98,6 +156,12 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             return "" if arguments[1] == "status" else "c" * 40 + "\n"
 
         monkeypatch.setattr("finserve.registry.producer_tasks.build_runtime", build)
+
+        def traffic_client(settings: RolloutSettings) -> httpx.AsyncClient:
+            """Exercise full rollout tasks with route-aware SSE, without claiming a live gateway."""
+            return httpx.AsyncClient(transport=httpx.MockTransport(response))
+
+        monkeypatch.setattr("finserve.registry.producer_rollout.traffic_client", traffic_client)
         monkeypatch.setattr("finserve.benchmark.experiment.benchmark_client", client)
         monkeypatch.setattr("finserve.benchmark.experiment.subprocess.check_output", git)
         monkeypatch.setattr(
@@ -155,8 +219,26 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             before = calls
             await produce_step(journal, spec.job_id, "freeze", http, DockerRuntime())
             assert register_produced_release(journal, spec.job_id + ":release-plan") == spec.job_id
-            assert evaluate_gate(registry, journal.artifacts, spec.job_id).status == "rejected"
+            assert evaluate_gate(registry, journal.artifacts, spec.job_id).status == (
+                "approved" if rollout else "rejected"
+            )
             assert calls == before
+            if rollout:
+                for action in ("prepare", "deploy", "acknowledge", "probation"):
+                    assert (
+                        await asyncio.to_thread(rollout_stage, spec.job_id, action) == spec.job_id
+                    )
+                assert (
+                    control.deployment(spec.deployment_id).known_good_revision
+                    == "producer-candidate"
+                )
+                assert (
+                    await asyncio.to_thread(rollout_stage, spec.job_id, "probation") == spec.job_id
+                )
+            else:
+                with pytest.raises(ValueError, match="approved canonical"):
+                    await asyncio.to_thread(rollout_stage, spec.job_id, "prepare")
+                assert routes.history(spec.deployment_id) == []
 
             def cleanup_command(
                 arguments: list[str], directory: Path, output: Path, timeout: float
@@ -171,8 +253,9 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             cleaned = await cleanup_unserved(
                 journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)
             )
-            assert cleaned == {"baseline": "stopped", "candidate": "stopped"}
-            assert all(daemon.container is None for daemon in daemons.values())
+            expected = "preserved_for_traffic" if rollout else "stopped"
+            assert cleaned == {"baseline": expected, "candidate": expected}
+            assert all((daemon.container is None) != rollout for daemon in daemons.values())
             assert (
                 await cleanup_unserved(
                     journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)

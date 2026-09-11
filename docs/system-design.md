@@ -24,7 +24,7 @@ Redis owns optional quotas and ephemeral cache bytes. SQLite owns durable visual
 
 The shared gate recomputes raw performance and frozen quality before a candidate may activate. Canonical profiles bind the measured endpoint, model/tokenizer manifests and engine configuration; a Revision binds the image. A route CAS changes active traffic only when its expected revision and generation match. In-flight work keeps its original route. Recovery is verified through real inference and exact revision identity.
 
-Airflow currently coordinates evidence registration, gate evaluation and the trusted deployment callback. Complete producer orchestration and managed probation remain under construction. The first produced GPU candidate was registered as rejected after failing its small development smoke; that smoke cannot replace the unchanged 32-case release suite.
+Airflow currently coordinates evidence registration, gate evaluation and the trusted deployment callback. A separate initial local producer DAG now connects collection through managed probation and cleanup. Its scheduler and lifecycle checks use scoped fixtures; repeated deployment support and full live GPU execution remain unfinished. The first produced GPU candidate was registered as rejected after failing its small development smoke; that smoke cannot replace the unchanged 32-case release suite.
 
 ## Evidence and unresolved limits
 

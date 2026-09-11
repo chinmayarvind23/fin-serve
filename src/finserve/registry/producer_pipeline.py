@@ -10,6 +10,7 @@ import httpx
 from pydantic import Field, model_validator
 
 from finserve.contracts.deployment import ImmutableModel
+from finserve.contracts.rollout import RolloutSettings
 from finserve.registry.managed_runtime import DockerRuntime
 from finserve.registry.pipeline import runtime
 from finserve.registry.producer_runtime import (
@@ -46,6 +47,7 @@ class ProducerExecution(ImmutableModel):
     producer: ProducerInput
     routes: Path
     control: Path
+    rollout: RolloutSettings | None = None
 
     @model_validator(mode="after")
     def separate_stores(self) -> "ProducerExecution":
@@ -98,15 +100,33 @@ def execution_input(journal: ProducerStages, job_id: str) -> FrozenExecution:
     return execution
 
 
-def freeze_stage() -> str:
+def freeze_stage(*, require_rollout: bool = False) -> str:
     """Read one bounded server-owned request; retries reject any changed job or store mapping."""
     with Path(os.environ["FINSERVE_PRODUCER_REQUEST"]).open("rb") as source:
         payload = source.read(4 * 1024**2 + 1)
     if len(payload) > 4 * 1024**2:
         raise ValueError("producer execution input exceeds four MiB")
     execution = ProducerExecution.model_validate_json(payload)
+    if require_rollout and execution.rollout is None:
+        raise ValueError("producer DAG requires frozen rollout settings")
     execution.verify_stores()
     with journal_runtime() as journal:
+        if execution.rollout is not None:
+            if execution.producer.expected_generation != 0:
+                raise ValueError("producer rollout currently requires an initial deployment")
+            if not journal.history(execution.producer.job_id + ":execution"):
+                routes = WarmRouteStore(
+                    execution.routes, expected_identity=existing_identity(execution.routes)
+                )
+                control = DeploymentStore(
+                    execution.control, expected_identity=existing_identity(execution.control)
+                )
+                for lookup in (routes.snapshot, control.deployment):
+                    try:
+                        lookup(execution.producer.deployment_id)
+                    except KeyError:
+                        continue
+                    raise ValueError("producer rollout requires an unused deployment ID")
         job_id = freeze_producer(journal, execution.producer)
         # freeze_producer canonicalizes the workspace/repository before declaring its input.
         execution = execution.model_copy(update={"producer": producer_input(journal, job_id)})
