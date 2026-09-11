@@ -10,7 +10,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import httpx
@@ -24,6 +24,7 @@ from pydantic import (
     model_validator,
 )
 
+from finserve.benchmark.constraint_mapping import RequestConstraintMap, read_constraint_map
 from finserve.benchmark.metrics import RequestRecord, summarize
 from finserve.benchmark.request_mapping import chatml_roles
 from finserve.benchmark.workload import WorkItem, Workload, default_workload
@@ -54,6 +55,35 @@ class RunConfig(BaseModel):
     system_prompt: str = Field(default="", max_length=16384)
     chat_template_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     prompt_mapping: Literal["literal", "chatml_roles_v1"] = "literal"
+    output_constraints: RequestConstraintMap | None = None
+    constraint_transport: Literal["finserve", "native_vllm"] | None = None
+
+    @model_validator(mode="after")
+    def explicit_constraint_transport(self) -> "RunConfig":
+        """Require a declared supported runtime and wire surface instead of guessing from a URL."""
+        if (self.output_constraints is None) != (self.constraint_transport is None):
+            raise ValueError("constraint map and transport must be declared together")
+        # Producer load templates receive actual runtime identities only after verified build.
+        if self.engine != "undeclared" or self.engine_config != "undeclared":
+            self.require_constraint_runtime()
+        return self
+
+    def require_constraint_runtime(self) -> None:
+        """Executable collectors and payloads cannot use a deferred producer load template."""
+        if (self.output_constraints is None) != (self.constraint_transport is None):
+            raise ValueError("constraint map and transport must be declared together")
+        if self.output_constraints is None:
+            return
+        try:
+            parameters = json.loads(self.engine_config)
+        except ValueError:
+            raise ValueError("constraints require a pinned xgrammar vLLM configuration") from None
+        if (
+            self.engine != "vllm"
+            or not isinstance(parameters, dict)
+            or cast(dict[str, object], parameters).get("structured_output_backend") != "xgrammar"
+        ):
+            raise ValueError("constraints require a pinned xgrammar vLLM configuration")
 
     @model_validator(mode="after")
     def explicit_chat_mapping(self) -> "RunConfig":
@@ -72,6 +102,9 @@ class RunConfig(BaseModel):
     ) -> dict[str, Any]:
         """Keep historical completion configuration bytes stable through registry round-trips."""
         result: dict[str, Any] = handler(self)
+        if self.output_constraints is None:
+            result.pop("output_constraints", None)
+            result.pop("constraint_transport", None)
         if self.prompt_mapping == "literal":
             result.pop("prompt_mapping", None)
         if self.request_api == "completions":
@@ -90,11 +123,21 @@ class RunConfig(BaseModel):
         }
         if self.prompt_mapping != "literal":
             mapping["prompt_mapping"] = self.prompt_mapping
+        if self.output_constraints is not None:
+            mapping["output_constraints_sha256"] = self.output_constraints.digest()
+            mapping["constraint_transport"] = self.constraint_transport
         return hashlib.sha256(json.dumps(mapping, sort_keys=True).encode()).hexdigest()
+
+    def require_output_shape(self, prompt: str, output: str) -> None:
+        """Retain raw answers but reject invalid shape without grading correctness."""
+        constraint = self.output_constraints.resolve(prompt) if self.output_constraints else None
+        if constraint is not None and not constraint.accepts(output):
+            raise ValueError("output did not satisfy frozen constraint")
 
 
 def request_payload(item: WorkItem, config: RunConfig) -> dict[str, object]:
     """Performance and quality collectors share one versioned prompt-to-wire mapping."""
+    config.require_constraint_runtime()
     payload: dict[str, object] = {
         "model": config.model,
         "max_tokens": item.max_tokens,
@@ -111,6 +154,13 @@ def request_payload(item: WorkItem, config: RunConfig) -> dict[str, object]:
         payload.update(messages=messages, stream_options={"include_usage": True})
     else:
         payload["prompt"] = item.prompt
+    if config.output_constraints is not None:
+        constraint = config.output_constraints.resolve(item.prompt)
+        if constraint is not None:
+            if config.constraint_transport == "native_vllm":
+                payload["structured_outputs"] = constraint.vllm_parameters()
+            else:
+                payload["output_constraint"] = constraint.model_dump(mode="json")
     return payload
 
 
@@ -278,6 +328,7 @@ async def request_one(
                 state.status_code = response.status_code
                 response.raise_for_status()
                 await consume_stream(response, state)
+                config.require_output_shape(item.prompt, state.output)
     except (httpx.HTTPError, TimeoutError, ValueError, HTTPClosureError) as exc:
         # Keep bounded failure labels; server bodies may include private prompt content.
         error = type(exc).__name__
@@ -466,6 +517,9 @@ async def run_benchmark(
     output: Path,
 ) -> dict[str, object]:
     """Freeze manifest first, flush every raw record, and refuse overwrites or in-repo evidence."""
+    config.require_constraint_runtime()
+    if config.output_constraints is not None:
+        config.output_constraints.require_prompts(item.prompt for item in workload.items)
     output = prepare_output(output)
     manifest: dict[str, object] = {
         "run_id": str(uuid4()),
@@ -549,6 +603,11 @@ class ComparisonInput(BaseModel):
                 raise ValueError(f"declare {field} before comparison")
         if self.workload.digest() != self.workload_hash:
             raise ValueError("embedded workload hash mismatch")
+        self.configuration.require_constraint_runtime()
+        if self.configuration.output_constraints is not None:
+            self.configuration.output_constraints.require_prompts(
+                item.prompt for item in self.workload.items
+            )
         if self.measured_finished_s - self.measured_started_s != self.measured_seconds:
             raise ValueError("measurement duration disagrees with clock boundaries")
         return self
@@ -576,6 +635,8 @@ def validate_evidence(path: Path) -> ComparisonInput:
         item = manifest.workload.items[row.logical_id % len(manifest.workload.items)]
         if row.case_id != item.case_id or row.family != item.family:
             raise ValueError("raw record disagrees with frozen workload")
+        if row.success:
+            manifest.configuration.require_output_shape(item.prompt, row.output)
         if row.generated_tokens is not None and row.generated_tokens > item.max_tokens:
             raise ValueError("raw token count exceeds frozen request budget")
         if row.phase == "measured" and not (
@@ -613,6 +674,8 @@ def validate_comparison(baseline: Path, candidate: Path) -> None:
         "system_prompt",
         "chat_template_sha256",
         "prompt_mapping",
+        "output_constraints",
+        "constraint_transport",
     ):
         if getattr(left.configuration, key) != getattr(right.configuration, key):
             raise ValueError(f"comparison differs in {key}")
@@ -648,6 +711,10 @@ def main() -> None:
     parser.add_argument(
         "--prompt-mapping", choices=("literal", "chatml_roles_v1"), default="literal"
     )
+    parser.add_argument(
+        "--output-constraints", type=Path, help="Frozen prompt-to-output-contract map"
+    )
+    parser.add_argument("--constraint-transport", choices=("finserve", "native_vllm"))
     args = parser.parse_args()
     workload = (
         Workload.model_validate_json(args.workload.read_text())
@@ -674,6 +741,10 @@ def main() -> None:
         system_prompt=args.system_prompt,
         chat_template_sha256=args.chat_template_sha256,
         prompt_mapping=args.prompt_mapping,
+        output_constraints=read_constraint_map(args.output_constraints)
+        if args.output_constraints
+        else None,
+        constraint_transport=args.constraint_transport,
     )
 
     async def execute() -> None:

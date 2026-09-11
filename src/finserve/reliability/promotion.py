@@ -138,6 +138,8 @@ def check_quality_identity(
     if (
         left.configuration.request_api == "chat"
         or right.configuration.request_api == "chat"
+        or left.configuration.output_constraints is not None
+        or right.configuration.output_constraints is not None
         or evidence.request_mapping_sha256 is not None
     ):
         if not (
@@ -146,6 +148,11 @@ def check_quality_identity(
             == right.configuration.request_mapping_digest()
         ):
             raise ValueError("quality request mapping differs from measured cohort")
+        for configuration in (left.configuration, right.configuration):
+            if configuration.output_constraints is not None:
+                configuration.output_constraints.require_prompts(
+                    case.prompt for case in suite.cases
+                )
 
 
 def verify_candidate_identity(candidate: ComparisonInput, revision: Revision) -> None:

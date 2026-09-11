@@ -17,6 +17,39 @@ and hashes. Both engine configurations must use the same mapping in a release co
 earlier measurements cannot be relabeled. Mapper tests establish protocol behavior, not model
 quality. The gateway does not implicitly interpret ChatML in user text.
 
+## Frozen output-constraint maps
+
+`RunConfig.output_constraints` is an optional `RequestConstraintMap` with schema version
+`prompt-output-contracts-v1`. Each entry contains `prompt_sha256` and a required `constraint`,
+either a bounded `OutputConstraint` or explicit `null` for an unconstrained request. Hash the
+exact original UTF-8 prompt before chat mapping, using `benchmark.constraint_mapping.prompt_digest`.
+Do not trim whitespace or use case identifiers, reporting families, evaluator kinds or expected
+answers to select constraints. A map records declared syntax; it cannot prove how its author
+selected that syntax. Prepare and review it from request text before inference.
+
+Maps contain at most 256 unique prompt bindings and 256 KiB of canonical configuration.
+Entry order is normalized. Duplicate hashes, missing bindings and unsupported schema fields
+fail. The CLI reads bounded sidecar bytes and also rejects duplicate JSON keys. Every quality
+and performance prompt needs an entry, including requests intentionally left unconstrained.
+Freeze the same complete map for both collectors and both release configurations. Its version
+and full digest enter request-mapping identity; a changed unused binding still changes identity.
+Existing workload and golden-suite bytes stay unchanged.
+
+Pass `--output-constraints <external-map.json> --constraint-transport native_vllm` for a native
+vLLM endpoint, or select `finserve` for the public gateway contract. The shared mapper emits
+`structured_outputs` or `output_constraint` respectively. Executable configs must declare
+`engine="vllm"` and an `engine_config` that pins `structured_output_backend="xgrammar"`.
+Producer load templates may leave both identities undeclared until actual build receipts resolve
+them; they cannot execute directly. Constrained producers require native transport and xgrammar
+in both frozen engine parameter sets.
+
+Collection retains invalid raw output as failed work. Syntax validation also runs during raw
+evidence reconstruction, so relabeling an invalid shape as successful fails verification.
+Completion and chat quality evidence both require the full mapping identity. A valid shape may
+still be wrong under the unchanged evaluator. Collector and sequential producer integration
+tests cover these boundaries with explicit synthetic HTTP/Docker fixtures. Actual constrained
+GPU quality, tokenizer grammar compilation and first-use latency measurements remain pending.
+
 Some earlier native recordings explicitly declare image and configuration digests unknown. Do not substitute a later container build for that missing identity. The runtime producer creates a separate verified model manifest and image from an exact source archive. Its model bytes are checked again before startup. A new source build or prompt-to-chat mapping is a new cohort, even if it reuses the same workload cases.
 
 Comparison validation checks the load envelope and pinned model identities before recomputing ratios. Request throughput and token throughput have separate numerators. Quality correctness and output agreement have separate references. Failed requests remain in the population; missing observations remain unknown. [Benchmark methodology](benchmark-methodology.md) gives the formulas and actual file layout.

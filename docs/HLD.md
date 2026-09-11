@@ -50,6 +50,8 @@ The warm deployment adapter changes route truth with an expected revision and ge
 
 Text clients can explicitly request a bounded output shape through the gateway, Ray and warm vLLM routing. The engine applies constrained decoding, and the adapter checks final syntax before reporting success. Shapes contain requested types and formatting rules, not expected answers; the release quality gate still decides correctness. Transport and CPU grammar checks cover this implementation. A new constraint-aware GPU experiment and its performance evidence remain pending.
 
+Quality and performance collectors share a frozen map from exact prompt identity to requested output shape. The producer preserves that map while deriving actual runtime identities from model and image receipts. Missing bindings and changed mappings reject collection or comparison. Synthetic integration covers the producer path; the map does not retroactively change earlier measurements or establish that its author selected shapes independently of answers.
+
 The AWS foundation specifies private EKS networking, bounded CPU/GPU node groups, RDS, Redis, S3, ECR and workload identities. Helm separates CPU Ray proxies from GPU engine Deployments. Local configuration and mocked provider checks pass; authenticated AWS/Hugging Face deployment remains incomplete. A Docker image and a Terraform plan are not proof of a running cloud service.
 
 The Hugging Face deployment package serves the existing evidence explorer on CPU with a public aggregate-results page and an authenticated, initially empty registry. Its local container passed actual HTTP/authentication and shutdown checks. It contains no GPU inference service or private raw evidence. Hosted deployment and browser rendering remain pending.

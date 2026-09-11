@@ -75,7 +75,7 @@ def verify_experiment(directory: Path, spec: PerformanceCollectionSpec) -> tuple
         manifest.configuration != spec.configuration
         or manifest.workload.digest() != spec.workload.digest()
         or raw_manifest["url"] != spec.endpoint()
-        or environment["configuration"] != spec.configuration.model_dump()
+        or environment["configuration"] != spec.configuration.model_dump(mode="json")
         or environment["workload_hash"] != spec.workload.digest()
         or not re.fullmatch(r"[0-9a-f]{40}", environment["git_sha"])
         or environment["git_sha"] != spec.collector_revision

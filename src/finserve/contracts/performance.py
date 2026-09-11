@@ -28,6 +28,7 @@ class PerformanceCollectionSpec(ImmutableModel):
     def coherent_runtime(self) -> Self:
         """Bound retained workload/population and reject runtime identity drift before requests."""
         self.profile.verify_revision(self.revision)
+        self.configuration.require_constraint_runtime()
         if self.configuration.model != self.profile.served_model:
             raise ValueError("performance model differs from serving profile")
         for field, attribute in (
@@ -48,6 +49,10 @@ class PerformanceCollectionSpec(ImmutableModel):
             or self.configuration.concurrency > 128
         ):
             raise ValueError("performance collection exceeds bounded local tier")
+        if self.configuration.output_constraints is not None:
+            self.configuration.output_constraints.require_prompts(
+                item.prompt for item in self.workload.items
+            )
         return self
 
     def canonical(self) -> str:

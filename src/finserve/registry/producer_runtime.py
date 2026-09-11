@@ -116,6 +116,18 @@ class ProducerInput(ImmutableModel):
             )
         if len(self.model_dump_json().encode()) > 4 * 1024**2:
             raise ValueError("producer input exceeds four MiB")
+        if self.load.output_constraints is not None:
+            if self.load.constraint_transport != "native_vllm" or any(
+                engine.parameters.structured_output_backend != "xgrammar"
+                for engine in (self.baseline, self.candidate)
+            ):
+                raise ValueError(
+                    "constrained producer requires native vLLM and two xgrammar profiles"
+                )
+            self.load.output_constraints.require_prompts(case.prompt for case in self.suite.cases)
+            self.load.output_constraints.require_prompts(
+                item.prompt for item in self.workload.items
+            )
         return self
 
 

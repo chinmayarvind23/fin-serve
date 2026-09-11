@@ -10,10 +10,16 @@ import httpx
 import pytest
 from test_managed_runtime import Daemon, handler, specification
 
+from finserve.benchmark.constraint_mapping import (
+    RequestConstraintBinding,
+    RequestConstraintMap,
+    prompt_digest,
+)
 from finserve.benchmark.gpu import TelemetrySample
 from finserve.benchmark.runner import RunConfig
 from finserve.benchmark.workload import WorkItem, Workload
 from finserve.contracts.model_assets import ModelManifest
+from finserve.contracts.output_constraint import ObjectField, OutputConstraint
 from finserve.contracts.rollout import RolloutSettings
 from finserve.evaluation.quality import default_suite
 from finserve.registry.artifacts import LocalArtifactStore
@@ -47,14 +53,40 @@ from finserve.reliability.warm_routes import WarmRouteStore
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("rollout", [False, True])
+@pytest.mark.parametrize(("rollout", "constrained"), [(False, False), (True, False), (True, True)])
 async def test_producer_derives_actual_build_and_runs_collectors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     rollout: bool,
+    constrained: bool,
 ) -> None:
     """Freeze->fetch->build->launch/collect->gate rejects wrong fixture answers without cutover."""
     template = specification(tmp_path)
+    suite = default_suite()
+    constraints = (
+        RequestConstraintMap(
+            entries=tuple(
+                RequestConstraintBinding(prompt_sha256=prompt_digest(prompt), constraint=shape)
+                for prompt, shape in (
+                    ("hello", OutputConstraint(kind="lowercase_word")),
+                    (suite.cases[0].prompt, OutputConstraint(kind="decimal")),
+                    (
+                        suite.cases[1].prompt,
+                        OutputConstraint(
+                            kind="json_object",
+                            fields=(
+                                ObjectField(name="revenue", type="number"),
+                                ObjectField(name="capex", type="number"),
+                            ),
+                        ),
+                    ),
+                    (suite.cases[2].prompt, OutputConstraint(kind="integer")),
+                )
+            )
+        )
+        if constrained
+        else None
+    )
     registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
     try:
         journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
@@ -65,15 +97,32 @@ async def test_producer_derives_actual_build_and_runs_collectors(
             source_revision=template.image.specification.source_revision,
             collector_revision="c" * 40,
             model=template.model,
-            baseline=ProducerEngine(port=9000, parameters=VLLMParameters()),
-            candidate=ProducerEngine(port=9001, parameters=VLLMParameters(enforce_eager=False)),
+            baseline=ProducerEngine(
+                port=9000,
+                parameters=VLLMParameters(
+                    structured_output_backend="xgrammar" if constrained else None
+                ),
+            ),
+            candidate=ProducerEngine(
+                port=9001,
+                parameters=VLLMParameters(
+                    enforce_eager=False,
+                    structured_output_backend="xgrammar" if constrained else None,
+                ),
+            ),
             workload=Workload(
                 suite_id="fixture",
                 version=1,
                 items=(WorkItem(case_id="one", prompt="hello", max_tokens=1),),
             ),
             load=RunConfig(
-                model="fixture", hardware="fixture-cpu", requests=4, warmup=1, concurrency=2
+                model="fixture",
+                hardware="fixture-cpu",
+                requests=4,
+                warmup=1,
+                concurrency=2,
+                output_constraints=constraints,
+                constraint_transport="native_vllm" if constrained else None,
             ),
             suite=default_suite(),
             policy=PromotionPolicy(
@@ -223,6 +272,11 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                     == spec.job_id
                 )
             plan, runtimes = prepared_cohorts(journal, spec)
+            if constrained:
+                for cohort in (plan.baseline, plan.candidate):
+                    assert cohort.quality.configuration.output_constraints == constraints
+                    assert cohort.performance.configuration.output_constraints == constraints
+                    cohort.performance.configuration.require_constraint_runtime()
             assert (
                 plan.candidate.performance.revision.image_digest
                 == template.image.image_manifest_digest
@@ -261,7 +315,12 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                         "expected_generation": 1,
                         "existing_baseline_stage": "producer:candidate-launch",
                         "baseline": spec.candidate,
-                        "candidate": ProducerEngine(port=9002, parameters=VLLMParameters()),
+                        "candidate": ProducerEngine(
+                            port=9002,
+                            parameters=VLLMParameters(
+                                structured_output_backend="xgrammar" if constrained else None
+                            ),
+                        ),
                         "source_revision": "d" * 40,
                         "workspace": tmp_path / "second-work",
                     }

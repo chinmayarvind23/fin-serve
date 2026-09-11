@@ -231,6 +231,7 @@ def load_quality_collection(
             ):
                 raise ValueError("quality raw request differs from frozen input")
             if row.success:
+                specification.configuration.require_output_shape(item.prompt, row.output)
                 outputs[row.case_id] = row.output
         if raw.read(1):
             raise ValueError("extra quality request records")

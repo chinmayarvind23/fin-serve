@@ -28,6 +28,7 @@ class QualityCollectionSpec(ImmutableModel):
     def coherent_runtime(self) -> Self:
         """Reject identity drift and unbounded suites before creating output or issuing requests."""
         self.profile.verify_revision(self.revision)
+        self.configuration.require_constraint_runtime()
         if self.configuration.model != self.profile.served_model:
             raise ValueError("collector model differs from serving profile")
         for field, attribute in (
@@ -43,6 +44,10 @@ class QualityCollectionSpec(ImmutableModel):
                 raise ValueError("collector configuration differs from runtime revision")
         if len(self.suite.cases) > 1024 or len(self.suite.model_dump_json().encode()) > 1024**2:
             raise ValueError("quality suite exceeds collection budget")
+        if self.configuration.output_constraints is not None:
+            self.configuration.output_constraints.require_prompts(
+                case.prompt for case in self.suite.cases
+            )
         return self
 
     def canonical(self) -> str:
