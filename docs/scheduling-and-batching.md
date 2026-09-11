@@ -1,35 +1,37 @@
-# Scheduling and Batching
+# Scheduling and batching
 
-## Admission
+FinServe selects an engine and owns request admission. The external engine owns token scheduling, continuous batching and KV allocation. Creating more Ray HTTP proxy actors does not create GPU capacity.
 
-Validate size, auth/quota, model/modality, concurrency, and bounded queue capacity before routing. Explicit overload is better than infinite latency.
+## Admission and ownership
 
-## Routing baseline
+[ReplicaRouter](../src/finserve/scheduler/router.py) serializes snapshot updates, selection and reservation under one lock. Each reservation has a unique lease. Worker snapshots identify reflected leases; the router adds only outstanding leases missing from that observation. Release requires the exact lease and rejects duplicate cleanup.
 
-Start simple/load-aware. Do not start with a complicated learned router.
+[RoutedBackends](../src/finserve/engines/ray_backends.py) addresses one named Ray proxy per trusted, distinct HTTP backend. Worker admission precedes generation. Cancellation retires that admission and drains the proxy stream before releasing the routing lease. Closing HTTP proves proxy cleanup; it does not prove a remote GPU kernel has stopped.
 
-## Prefix/cache affinity
+The pure scheduler rejects full capacity immediately. The production bridge waits for otherwise eligible, temporarily saturated replicas within the original request deadline. Its admission path has a 128-request cap and fixed status counters for pending admissions, waited requests and accumulated admission time. Each attempt refreshes observations before reserving. No worker generation starts during this wait. Unhealthy, stale, unknown-memory and mismatched-model replicas remain ineligible. Waiting does not guarantee fairness.
 
-Prefer a replica with reusable prefix state only while load imbalance remains acceptable. Cache affinity that overloads one replica is a bad optimization.
+## Policy and observations
 
-## Length/SLO awareness
+[policy.py](../src/finserve/scheduler/policy.py) checks health, exact model, positive capacity, observation freshness, requested GPU compatibility and memory limits before ranking. The baseline ranks normalized effective load. The adaptive score adds physical GPU memory pressure and subtracts a bounded prefix-affinity preference. Affinity cannot bypass capacity or attract work beyond the permitted load gap. Stable replica IDs break ties.
 
-Later experiments can separate interactive short work from long/batch work if the held-out workload shows benefit.
+The production bridge currently supplies no prefix-cache ownership information, so cache affinity is inactive. There is no request-length or SLO scheduling branch. The engine receives each request's generation budget.
 
-## Adaptive policy
+[backend_observations.py](../src/finserve/engines/backend_observations.py) parses bounded vLLM gauges for running requests, waiting requests and KV utilization. Worker load is the larger of current proxy occupancy and the cached native count. Physical VRAM comes from one shared-device sampler; engine KV and physical GPU memory remain separate. Cached engine age and physical sample age are independent of router receipt time. Missing observations fail closed.
 
-Feature vector can include ongoing requests, queue depth, GPU memory, cache affinity, request length buckets, and SLO class. Score eligible replicas and log features/reason codes for every decision.
+The proxy capacity guarantee assumes exclusive routed traffic. Bypass clients do not share its atomic lease fence; native engine limits remain authoritative. Multiple independent routers must partition worker budgets or share one owner.
 
-## Backpressure
+## Local two-engine evidence
 
-Use max queued/ongoing requests, per-user concurrency, size limits, timeouts. Saturation returns an overload error rather than silently buffering forever.
+Two vLLM 0.29.0 processes loaded the same pinned Qwen2.5-0.5B model on one RTX 4070 Laptop GPU with memory fraction 0.35 each, four sequences per engine, context 1,024 and prefix caching disabled. Both became ready. The shared device used 5,952 of 8,188 MiB at the idle checkpoint.
 
-## Autoscaling chain
+The first frozen comparison offered 64 requests per cohort at concurrency eight in least-load/adaptive/adaptive/least-load order. Success counts were 21, 19, 24 and 24. All 168 failures surfaced as engine unavailable; retained Ray logs identify capacity rejection before content. Successful-request throughput ranged from 1.69 to 2.38 requests/s. This failed availability envelope provides no adaptive routing gain. Shared VRAM and inactive affinity also make the policies order-equivalent for identical snapshots.
 
-`traffic -> Serve replica demand -> Ray resource demand -> Pod demand -> EC2 GPU node demand`
+Retained session `two-engine-routing-session-01` predates bounded admission waiting. Conservative cached occupancy can remain full after proxy completion; CPU tests cover this mechanism without discarding the native gauge. A corrected GPU comparison requires a new session with the same frozen workload.
 
-Each layer has a different signal and reaction time.
+Scale-down quarantined the second backend, drained it and stopped its owned process; a survivor request completed. Restart failed in the local port preflight before generation two launched. The session remains failed. A Linux regression reproduces a retained TCP TIME_WAIT bind failure; the corrected preflight permits that state while rejecting live listeners. Successful cold restart and cloud autoscaling remain unverified.
 
-## GPU placement
+## Scaling boundary
 
-Use accelerator labels and placement groups for single-GPU models, multi-GPU tensor parallel groups, and modality-specific pools. Actual GPU types depend on AWS quota/budget.
+The current layout uses public handles and one named deployment per endpoint. Ray also exposes a [custom request-router API](https://docs.ray.io/en/latest/serve/advanced-guides/custom-request-router.html); this implementation does not replace Ray's internal replica scheduler. Its single authority favors inspectable ownership over an unmeasured distributed control plane.
+
+The intended infrastructure chain is Serve demand, Ray resources, pods and GPU nodes. Repository configuration alone does not verify this chain in a deployed cloud. Process readiness, image pull, weight loading, compilation and node provisioning require separate timings and failure records.

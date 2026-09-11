@@ -24,6 +24,12 @@ Both sinks receive sanitized spans. The exporter retains fixed span names, trace
 
 The gateway publishes fixed-cardinality request, token, duration, TTFT and active-owner metrics. Request IDs and prompts are not metric labels. The routing observation path separately reads actual vLLM running/waiting/KV gauges and shared physical `nvidia-smi` measurements. A proxy lease count is neither GPU utilization nor KV occupancy.
 
-The local Compose monitoring override configures Prometheus and Grafana. Hosted Langfuse and CloudWatch ingestion, operational dashboard/alert validation and a controlled instrumentation-overhead experiment remain incomplete. OTLP transport verification alone does not establish those deployments.
+The separate [local Langfuse stack](../infra/docker/langfuse.md) has verified actual OTLP ingestion and an authenticated database query for the same trace/span IDs. The stored synthetic span retained model and token-count metadata and omitted input/output, event text and an injected private marker. Langfuse 4.33.0 requires the explicit `langfuse-v4` protocol option: it returns a bounded JSON queue acknowledgement instead of the standard OTLP protobuf reply. A queue acknowledgement alone does not prove stored data; the probe verifies that separately.
+
+All six local services stopped after the probe, with volumes retained. Web and worker exceeded the 30-second graceful-stop budget and exited 137; no graceful worker shutdown under load is claimed. Hosted Langfuse and CloudWatch ingestion remain unverified.
+
+A six-cohort real HTTP fixture experiment compared tracing off, 1% local JSON sampling and full local JSON tracing in a balanced sequence. All 6,144 measured requests completed and both full-trace cohorts exported all 1,056 spans including warmup. Per-cohort throughput ranged from 49.25 to 57.00 requests/s. Workstation and mounted-file I/O variation prevent a defensible isolated overhead estimate from this sequence. It does not measure GPU, Ray or hosted OTLP overhead. The source-controlled harness is `scripts/measure_trace_overhead.py`; raw evidence remains in `trace-overhead-01`.
+
+The Compose monitoring override configures Prometheus and Grafana. Its operational dashboard/alert validation is separate work from the evidence explorer and from trace ingestion.
 
 Implementation follows the [OpenTelemetry Python propagation API](https://opentelemetry.io/docs/languages/python/propagation/) and [official OTLP exporter](https://opentelemetry-python.readthedocs.io/en/latest/exporter/otlp/otlp.html). See `telemetry/tracing.py`, `telemetry/propagation.py` and the actual Ray/HTTP integration tests for FinServe's narrower supported boundary.

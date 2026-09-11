@@ -51,7 +51,7 @@ Three separately frozen counterfactual bar charts produced correct red/green/blu
 
 ## Routing and rollback
 
-A 64-request real Ray-to-GPU smoke completed 64/64 requests. It verifies the transport/lease bridge to one actual engine, not a multi-GPU routing gain. Multi-backend capacity experiments remain in progress.
+A 64-request real Ray-to-GPU smoke completed 64/64 requests. It verifies the transport/lease bridge to one actual engine, not a multi-GPU routing gain. A later four-cohort comparison used two distinct vLLM processes on one physical GPU. It completed 21, 19, 24 and 24 of 64 requests in least-load/adaptive/adaptive/least-load order; all 168 failures preceded content, and Ray logs identify capacity rejection. The failed session provides no adaptive gain. Scale-down and a survivor request succeeded, then restart preflight failed. A separately reviewed bounded admission wait and Linux port-reuse correction require a new GPU session. See [scheduling](scheduling-and-batching.md).
 
 A local warm-route fault drill restored the expected healthy revision in 0.680 seconds after detection. It retained one deliberately failed request and verified actual HTTP traffic after the route CAS. It switches between already-running fixture endpoints and does not include image pull, model load, cloud node replacement or GPU restart.
 
