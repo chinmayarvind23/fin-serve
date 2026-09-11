@@ -51,7 +51,7 @@ def selected_files(repository: Path) -> set[str]:
     return selected
 
 
-def package(repository: Path, output: Path) -> None:
+def package(repository: Path, output: Path, *, static: bool = False) -> None:
     """Copy only reviewed paths into fresh external storage, retaining exact byte provenance."""
     repository, output = repository.resolve(), output.resolve()
     if output == repository or repository in output.parents:
@@ -67,9 +67,13 @@ def package(repository: Path, output: Path) -> None:
         )
     contents["Dockerfile"] = contents["infra/huggingface/Dockerfile"]
     contents["README.md"] = contents["infra/huggingface/README.md"]
+    if static:
+        contents = static_contents(repository, contents)
     status = git(repository, "status", "--porcelain=v1")
     manifest = {
-        "scope": "CPU evidence explorer; public aggregate files only; empty initial registry",
+        "scope": "public static aggregates; no API or inference"
+        if static
+        else "CPU evidence explorer; public aggregate files only; empty initial registry",
         "git_revision": git(repository, "rev-parse", "HEAD").decode().strip(),
         "dirty": bool(status),
         "git_status_sha256": hashlib.sha256(status).hexdigest(),
@@ -83,12 +87,36 @@ def package(repository: Path, output: Path) -> None:
     (output / "space-package.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
+def static_contents(repository: Path, source: dict[str, bytes]) -> dict[str, bytes]:
+    """Publish only a static page and committed aggregates; never ship API code or secrets."""
+    page = repository / "infra/huggingface/static.html"
+    if page.is_symlink() or repository not in page.resolve().parents:
+        raise ValueError("static page must remain inside the repository")
+    result = {
+        "index.html": page.read_bytes(),
+        "landing.css": source["infra/huggingface/landing.css"],
+        "README.md": (
+            "---\ntitle: FinServe Measured Results\nemoji: 📊\ncolorFrom: blue\n"
+            "colorTo: green\nsdk: static\napp_file: index.html\n---\n\n"
+            "Public aggregate results from local GPU experiments. No inference or API runs "
+            "in this Space. Run the full application locally using "
+            "[these instructions](https://github.com/chinmayarvind23/fin-serve/blob/master/"
+            "docs/run-free.md).\n"
+        ).encode(),
+    }
+    result.update({"public-results/" + Path(name).name: source[name] for name in PUBLIC_FILES})
+    return result
+
+
 def main() -> None:
     """Accept one fresh external destination; callers cannot broaden the source allowlist."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--static", action="store_true", help="package the free static results page"
+    )
     args = parser.parse_args()
-    package(Path(__file__).resolve().parents[2], args.output)
+    package(Path(__file__).resolve().parents[2], args.output, static=args.static)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,12 @@ GraphQL read service. It performs no GPU inference. The public landing page show
 committed aggregate figures and their measurement limitations; `/explorer` opens
 the authenticated application.
 
+If your account cannot host a Docker Space without a subscription, run this
+container locally and publish the static aggregate page instead:
+`python infra/huggingface/package.py --static --output /absolute/private/static-space`.
+The static bundle has no backend or authentication secrets. See the
+[free local setup](https://github.com/chinmayarvind23/fin-serve/blob/master/docs/run-free.md).
+
 The initial SQLite registry is empty. No private raw request records, model
 weights or credentials are included. Data under `/data` is ephemeral and is not a
 durable hosted registry. A successful container start does not establish a cloud
