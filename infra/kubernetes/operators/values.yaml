@@ -1,0 +1,22 @@
+# Device plugin uses integer GPUs; never install DRA on these same nodes.
+kuberay-operator:
+  nodeSelector:
+    finserve.io/pool: cpu
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+nvidia-device-plugin:
+  nodeSelector:
+    finserve.io/pool: gpu
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  gfd:
+    enabled: false
+  nfd:
+    enabled: false
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}

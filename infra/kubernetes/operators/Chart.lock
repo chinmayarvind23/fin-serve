@@ -1,0 +1,9 @@
+dependencies:
+- name: kuberay-operator
+  repository: https://ray-project.github.io/kuberay-helm/
+  version: 1.6.1
+- name: nvidia-device-plugin
+  repository: https://nvidia.github.io/k8s-device-plugin
+  version: 0.20.0
+digest: sha256:e668737b786f6f8f7323349bde376f3d9a22da64af249a9f47e6aa8485c7041c
+generated: "2026-09-11T02:15:06.336658774-05:00"

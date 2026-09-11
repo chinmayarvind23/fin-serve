@@ -1,0 +1,12 @@
+apiVersion: v2
+name: finserve-operators
+description: Pinned operators installed before the FinServe RayService workload.
+version: 0.1.0
+type: application
+dependencies:
+  - name: kuberay-operator
+    version: 1.6.1
+    repository: https://ray-project.github.io/kuberay-helm/
+  - name: nvidia-device-plugin
+    version: 0.20.0
+    repository: https://nvidia.github.io/k8s-device-plugin

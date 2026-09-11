@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["ray", "engine"],
+  "properties": {
+    "ray": {
+      "type": "object",
+      "required": ["image", "version", "importPath", "capacityPerWorker", "workers"],
+      "properties": {
+        "image": {"type": "string", "pattern": "^[^ ]+@sha256:[a-f0-9]{64}$"},
+        "version": {"const": "2.58.0"},
+        "importPath": {"const": "finserve.engines.ray_backends:build_application"},
+        "capacityPerWorker": {"type": "integer", "minimum": 1, "maximum": 64},
+        "workers": {"const": 2}
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": ["image", "model", "revision", "tokenizerRevision", "credentialsSecret", "maxModelLength", "maxSequences", "startupSeconds"],
+      "properties": {
+        "image": {"type": "string", "pattern": "^[^ ]+@sha256:[a-f0-9]{64}$"},
+        "model": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "tokenizerRevision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "credentialsSecret": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$"},
+        "maxModelLength": {"type": "integer", "minimum": 128, "maximum": 8192},
+        "maxSequences": {"type": "integer", "minimum": 1, "maximum": 64},
+        "startupSeconds": {"type": "integer", "minimum": 60, "maximum": 1800}
+      }
+    },
+    "evidenceRoleArn": {"type": "string", "pattern": "^$|^arn:aws:iam::[0-9]{12}:role/.+$"}
+  }
+}

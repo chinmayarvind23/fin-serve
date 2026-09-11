@@ -1,0 +1,5 @@
+apiVersion: v2
+name: finserve-workload
+description: Internal Ray CPU proxies backed by one separately owned NVIDIA inference engine.
+version: 0.1.0
+type: application

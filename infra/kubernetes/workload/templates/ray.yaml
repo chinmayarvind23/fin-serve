@@ -1,0 +1,93 @@
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: {{ .Release.Name }}-ray
+spec:
+  serveConfigV2: |
+    applications:
+      - name: finserve
+        route_prefix: /
+        import_path: {{ .Values.ray.importPath | quote }}
+        args:
+          model: {{ .Values.engine.servedModel | quote }}
+          backends:
+            engine-a: {{ printf "http://%s-engine:8000/v1" .Release.Name | quote }}
+          capacity_per_worker: {{ .Values.ray.capacityPerWorker }}
+          mode: least_load
+  rayClusterConfig:
+    rayVersion: {{ .Values.ray.version | quote }}
+    # Static capacity keeps node, pod and Serve scaling loops independently reviewable.
+    enableInTreeAutoscaling: false
+    headGroupSpec:
+      serviceType: ClusterIP
+      rayStartParams: {num-cpus: "0", num-gpus: "0", dashboard-host: "0.0.0.0"}
+      template:
+        metadata:
+          labels: {finserve.io/component: ray}
+        spec:
+          serviceAccountName: {{ .Release.Name }}-runtime
+          nodeSelector: {finserve.io/pool: cpu}
+          terminationGracePeriodSeconds: 120
+          securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
+          containers:
+            - name: ray-head
+              image: {{ .Values.ray.image | quote }}
+              resources:
+                requests: {cpu: 500m, memory: 2Gi}
+                limits: {cpu: "1", memory: 2Gi}
+              startupProbe:
+                exec:
+                  command: [bash, -c, "wget -T 2 -q -O- http://localhost:8265/api/gcs_healthz | grep success"]
+                periodSeconds: 10
+                failureThreshold: 60
+              readinessProbe:
+                exec:
+                  command: [bash, -c, "wget -T 2 -q -O- http://localhost:8265/api/gcs_healthz | grep success"]
+                periodSeconds: 5
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+              ports:
+                - {name: gcs, containerPort: 6379}
+                - {name: dashboard, containerPort: 8265}
+                - {name: serve, containerPort: 8000}
+              env:
+                - name: FINSERVE_ENGINE_API_KEY
+                  valueFrom:
+                    secretKeyRef: {name: {{ .Values.engine.credentialsSecret }}, key: api-key}
+    workerGroupSpecs:
+      - groupName: cpu-proxies
+        replicas: {{ .Values.ray.workers }}
+        minReplicas: {{ .Values.ray.workers }}
+        maxReplicas: {{ .Values.ray.workers }}
+        rayStartParams: {num-cpus: "1", num-gpus: "0"}
+        template:
+          metadata:
+            labels: {finserve.io/component: ray}
+          spec:
+            serviceAccountName: {{ .Release.Name }}-runtime
+            nodeSelector: {finserve.io/pool: cpu}
+            terminationGracePeriodSeconds: 120
+            securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
+            containers:
+              - name: ray-worker
+                image: {{ .Values.ray.image | quote }}
+                resources:
+                  requests: {cpu: "1", memory: 2Gi}
+                  limits: {cpu: "1", memory: 2Gi}
+                startupProbe:
+                  exec:
+                    command: [bash, -c, "wget -T 2 -q -O- http://localhost:52365/api/local_raylet_healthz | grep success"]
+                  periodSeconds: 10
+                  failureThreshold: 60
+                readinessProbe:
+                  exec:
+                    command: [bash, -c, "wget -T 2 -q -O- http://localhost:52365/api/local_raylet_healthz | grep success"]
+                  periodSeconds: 5
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL]}
+                env:
+                  - name: FINSERVE_ENGINE_API_KEY
+                    valueFrom:
+                      secretKeyRef: {name: {{ .Values.engine.credentialsSecret }}, key: api-key}

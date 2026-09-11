@@ -1,0 +1,18 @@
+# Required image digests and model commits have no deployable defaults.
+ray:
+  image: ""
+  version: "2.58.0"
+  importPath: finserve.engines.ray_backends:build_application
+  capacityPerWorker: 16
+  workers: 2
+engine:
+  image: ""
+  model: ""
+  revision: ""
+  tokenizerRevision: ""
+  servedModel: finserve-qwen
+  credentialsSecret: ""
+  maxModelLength: 2048
+  maxSequences: 8
+  startupSeconds: 900
+evidenceRoleArn: ""

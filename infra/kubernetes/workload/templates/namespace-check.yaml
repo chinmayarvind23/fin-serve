@@ -1,0 +1,3 @@
+{{- if ne .Release.Namespace "finserve" -}}
+{{- fail "Install this workload in namespace finserve; IAM and network policy identities are fixed." -}}
+{{- end -}}

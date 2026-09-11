@@ -1,0 +1,26 @@
+# Same-namespace Ray traffic is trusted; no dashboard/GCS is exposed outside the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-internal
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: finserve-operators}
+      ports:
+        - {protocol: TCP, port: 8265}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finserve-evidence
+  {{- if .Values.evidenceRoleArn }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.evidenceRoleArn | quote }}
+  {{- end }}
+automountServiceAccountToken: false

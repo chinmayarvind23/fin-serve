@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-runtime
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-engine
+spec:
+  replicas: 1
+  # One physical GPU cannot support a surge pod; candidate validation needs separate capacity.
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-engine}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-engine, finserve.io/component: engine}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-runtime
+      terminationGracePeriodSeconds: 120
+      nodeSelector: {finserve.io/pool: gpu}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
+      containers:
+        - name: engine
+          image: {{ .Values.engine.image | quote }}
+          command: [python, -m, vllm.entrypoints.openai.api_server]
+          args:
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --model
+            - {{ .Values.engine.model | quote }}
+            - --revision
+            - {{ .Values.engine.revision | quote }}
+            - --tokenizer-revision
+            - {{ .Values.engine.tokenizerRevision | quote }}
+            - --served-model-name
+            - {{ .Values.engine.servedModel | quote }}
+            - --max-model-len
+            - {{ .Values.engine.maxModelLength | quote }}
+            - --max-num-seqs
+            - {{ .Values.engine.maxSequences | quote }}
+            - --gpu-memory-utilization
+            - "0.80"
+          env:
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.engine.credentialsSecret }}, key: api-key}
+          ports: [{name: http, containerPort: 8000}]
+          resources:
+            requests: {cpu: "3", memory: 12Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "3", memory: 12Gi, nvidia.com/gpu: "1"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: {{ div .Values.engine.startupSeconds 10 }}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+            failureThreshold: 4
+          volumeMounts:
+            - {name: cache, mountPath: /cache}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: cache
+          emptyDir: {sizeLimit: 40Gi}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-engine
+spec:
+  type: ClusterIP
+  selector: {app: {{ .Release.Name }}-engine}
+  ports: [{name: http, port: 8000, targetPort: http}]
