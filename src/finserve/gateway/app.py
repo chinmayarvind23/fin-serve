@@ -382,6 +382,12 @@ def from_env() -> FastAPI:
         engine = OpenAICompletionEngine(
             os.environ["FINSERVE_ENGINE_URL"], api_key=os.getenv("FINSERVE_ENGINE_API_KEY")
         )
+    elif backend == "ray-http":
+        from finserve.engines.ray_http import RayHTTPEngine
+
+        engine = RayHTTPEngine(
+            os.environ["FINSERVE_ENGINE_URL"], api_key=os.getenv("FINSERVE_RAY_API_KEY")
+        )
     else:
         raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
     trace_path = os.getenv("FINSERVE_TRACE_PATH")

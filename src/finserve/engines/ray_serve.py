@@ -10,6 +10,8 @@ import asyncio
 import importlib
 import time
 from collections.abc import AsyncGenerator
+from contextlib import aclosing
+from contextvars import Context
 from typing import Any, Literal, cast
 
 from starlette.requests import Request
@@ -28,6 +30,7 @@ class FixtureReplica:
     def __init__(self, replica_id: str, capacity: int, token_delay_seconds: float) -> None:
         """Use independent replica identities so public deployment handles can target selections."""
         self.replica_id = replica_id
+        self.model = "fixture"
         self.capacity = capacity
         self.token_delay_seconds = token_delay_seconds
         self.active: set[str] = set()
@@ -47,16 +50,21 @@ class FixtureReplica:
         self._producers[lease_id] = producer
         complete = False
         try:
-            for character in (request.prompt + " ")[: request.max_tokens]:
-                await asyncio.sleep(self.token_delay_seconds)
-                token = EngineToken(text=character, token_id=ord(character))
-                yield {"replica_id": self.replica_id, "token": token.model_dump()}
+            async with aclosing(self.tokens(request)) as output:
+                async for token in output:
+                    yield {"replica_id": self.replica_id, "token": token.model_dump()}
             complete = True
         finally:
             self.active.discard(lease_id)
             self._producers.pop(lease_id, None)
             self.completed += int(complete)
             self.cancelled += int(not complete)
+
+    async def tokens(self, request: InferenceRequest) -> AsyncGenerator[EngineToken, None]:
+        """Keep fixture generation replaceable while sharing the verified lease lifecycle."""
+        for character in (request.prompt + " ")[: request.max_tokens]:
+            await asyncio.sleep(self.token_delay_seconds)
+            yield EngineToken(text=character, token_id=ord(character))
 
     def admit(self, lease_id: str) -> None:
         """Fence generation with an explicit allowlist; a retired queued call cannot self-admit."""
@@ -76,7 +84,7 @@ class FixtureReplica:
         """Report acknowledged lease IDs; the router stamps receipt time on its own clock."""
         return {
             "replica_id": self.replica_id,
-            "model": "fixture",
+            "model": self.model,
             "capacity": self.capacity,
             "ongoing_requests": len(self.active),
             "reflected_lease_ids": list(self.active),
@@ -91,13 +99,14 @@ class RoutedFixture:
     def __init__(self, first: Any, second: Any, mode: Literal["least_load", "adaptive"]) -> None:
         """Keep Ray's per-deployment scheduling beneath an explicit, single routing authority."""
         self.handles: dict[str, Any] = {"fixture-a": first, "fixture-b": second}
+        self.model = "fixture"
         self.router = ReplicaRouter(RoutingPolicy(mode=mode))
 
     async def _refresh_one(self, replica_id: str, handle: Any) -> None:
         """Bound heartbeat latency and quarantine workers without a current snapshot."""
         try:
             async with asyncio.timeout(2):
-                data: dict[str, Any] = await handle.snapshot.remote()
+                data = await self.read_snapshot(handle)
             data.pop("completed", None)
             data.pop("cancelled", None)
             data["received_at"] = time.monotonic()
@@ -106,12 +115,16 @@ class RoutedFixture:
             self.router.update_snapshot(
                 ReplicaSnapshot(
                     replica_id=replica_id,
-                    model="fixture",
+                    model=self.model,
                     received_at=time.monotonic(),
                     capacity=0,
                     healthy=False,
                 )
             )
+
+    async def read_snapshot(self, handle: Any) -> dict[str, Any]:
+        """Keep the public heartbeat call replaceable for engine-backed workers."""
+        return cast(dict[str, Any], await handle.snapshot.remote())
 
     async def _release_after_worker(
         self, lease: RoutingLease, admission: asyncio.Future[Any], result: Any
@@ -134,8 +147,15 @@ class RoutedFixture:
     async def generate(self, payload: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
         """Route once, stream without retry, and drain cancellation before releasing admission."""
         request = InferenceRequest.model_validate(payload)
-        await asyncio.gather(
-            *(self._refresh_one(replica_id, handle) for replica_id, handle in self.handles.items())
+        deadline = time.monotonic() + request.timeout_seconds
+        await asyncio.wait_for(
+            asyncio.gather(
+                *(
+                    self._refresh_one(replica_id, handle)
+                    for replica_id, handle in self.handles.items()
+                )
+            ),
+            timeout=max(0, deadline - time.monotonic()),
         )
         lease = self.router.reserve(RoutingRequest(model=request.model))
         admission: asyncio.Future[Any] | None = None
@@ -146,15 +166,30 @@ class RoutedFixture:
             admission = cast(
                 asyncio.Future[Any], asyncio.ensure_future(worker.admit.remote(lease.lease_id))
             )
-            await asyncio.shield(admission)
+            await asyncio.wait_for(asyncio.shield(admission), max(0, deadline - time.monotonic()))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("routing request budget exceeded")
+            payload = request.model_copy(update={"timeout_seconds": remaining}).model_dump()
             result = handle.generate.remote(payload, lease.lease_id)
-            async for token in result:
+            iterator = aiter(result)
+            while True:
+                try:
+                    token = await asyncio.wait_for(
+                        anext(iterator), max(0, deadline - time.monotonic())
+                    )
+                except StopAsyncIteration:
+                    break
                 yield token
         finally:
             if admission is None:
                 self.router.release(lease)
             else:
-                cleanup = asyncio.create_task(self._release_after_worker(lease, admission, result))
+                # Cleanup is a new control operation, not a child of the cancelled Ray request.
+                # A fresh context prevents Ray from immediately cancelling its retire RPC.
+                cleanup = asyncio.create_task(
+                    self._release_after_worker(lease, admission, result), context=Context()
+                )
                 cancelled_during_cleanup = False
                 while not cleanup.done():
                     try:
