@@ -56,14 +56,19 @@ The inference edge has its own coarse bound and passes cancellation upstream. Fa
 
 ## Durable state and identities
 
-Initial producer rollout freezes its traffic URL and probation settings before collection.
+Producer rollout freezes its traffic URL and probation settings before collection.
 After reconstructing producer receipts and canonical approval, route preparation registers
 the gate's immutable profiles and selects only the expected baseline. A successful ingress
 smoke is checked again under the route write lock before controller initialization. Candidate
 deployment, acknowledgment and probation then use the existing lifecycle action and generation
 fences. The DAG requires both successful probation and settled cleanup at its terminal task.
-Current producer jobs mint new baseline IDs, so initial rollout rejects an existing deployment
-before collection; stable-baseline receipt reuse for later releases remains unimplemented.
+An update names an existing completed baseline launch stage. Its profile and runtime identity
+remain unchanged while new quality/performance stages collect fresh evidence. The initial
+launch task becomes an observation of that original start; it creates no new baseline container
+or launch receipt. Collection entry checks the borrowed revision against simultaneous registered
+route/controller truth and requires active=known-good at the expected generation with no rollback.
+Cleanup excludes borrowed runtimes. Omitted baseline references retain the original initial-job
+serialization so existing frozen inputs remain replayable.
 
 Route and rollback stores retain a persistent UUID created during explicit initialization.
 Producer execution freezes both UUIDs with their paths. Task reopens require those identities

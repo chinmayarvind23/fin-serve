@@ -23,7 +23,12 @@ from finserve.engines.openai_adapter import CompletionState, sse_events
 from finserve.http_ownership import HTTPClosureError, own_response
 from finserve.registry.model_assets import owned_disk
 from finserve.reliability.promotion import PromotionDecision
-from finserve.reliability.rollback import ApplyRequest, ControlConflict, DeploymentStore
+from finserve.reliability.rollback import (
+    ApplyRequest,
+    ControlConflict,
+    DeploymentStore,
+    load_record,
+)
 from finserve.reliability.store_identity import initialize_identity, open_existing, verify_identity
 
 
@@ -297,6 +302,40 @@ class WarmRouteStore:
             )
             self._save(connection, state)
             return state
+
+    def require_stable_baseline(
+        self,
+        control: DeploymentStore,
+        deployment_id: str,
+        backend: WarmBackend,
+        generation: int,
+    ) -> None:
+        """Bind a borrowed runtime to route/controller truth before fresh collection."""
+        if self.path == control.path:
+            raise ValueError("route and control stores require separate database files")
+        revision = backend.revision
+        with self.transaction() as connection, control.transaction() as controller:
+            self._require_available(connection, revision.revision_id)
+            route = self._snapshot(connection, deployment_id)
+            state = load_record(controller, "deployments", deployment_id, DeploymentState)
+            registered = load_record(controller, "revisions", revision.revision_id, Revision)
+            row: tuple[str] | None = connection.execute(
+                "SELECT payload FROM warm_backends WHERE id=?",
+                (revision.revision_id,),
+            ).fetchone()
+            if (
+                row is None
+                or WarmBackend.model_validate_json(row[0]) != backend
+                or registered != revision
+                or route.revision_digest != revision.digest()
+                or route.revision_id != revision.revision_id
+                or state.active_revision != revision.revision_id
+                or state.known_good_revision != revision.revision_id
+                or state.generation != generation
+                or route.generation != generation
+                or state.rollback_id is not None
+            ):
+                raise ControlConflict("borrowed baseline is not the current stable deployment")
 
     def acknowledge_baseline(
         self,

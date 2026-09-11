@@ -3,10 +3,10 @@
 import json
 from functools import partial
 from pathlib import Path
-from typing import Literal, Self, get_args
+from typing import Any, Literal, Self, get_args
 
 import httpx
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from finserve.benchmark.runner import RunConfig
 from finserve.benchmark.workload import Workload
@@ -59,6 +59,9 @@ class ProducerInput(ImmutableModel):
     model: ModelFetchSpec
     baseline: ProducerEngine
     candidate: ProducerEngine
+    existing_baseline_stage: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$", max_length=128
+    )
     workload: Workload
     load: RunConfig
     suite: GoldenSuite
@@ -67,6 +70,14 @@ class ProducerInput(ImmutableModel):
     repository: Path
     workspace: Path
     readiness_timeout_seconds: float = Field(default=300, gt=0, le=900)
+
+    @model_serializer(mode="wrap")
+    def preserve_initial_input(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Adding baseline reuse must not change canonical bytes of already frozen initial jobs."""
+        result: dict[str, Any] = handler(self)
+        if self.existing_baseline_stage is None:
+            result.pop("existing_baseline_stage", None)
+        return result
 
     @model_validator(mode="after")
     def bounded_input(self) -> Self:
@@ -82,6 +93,10 @@ class ProducerInput(ImmutableModel):
             or self.load.hardware == "undeclared"
             or len(self.workload.model_dump_json().encode()) > 1024**2
             or len(self.suite.model_dump_json().encode()) > 1024**2
+            or (
+                self.existing_baseline_stage is not None
+                and self.existing_baseline_stage.startswith(self.job_id + ":")
+            )
         ):
             raise ValueError("producer input exceeds local bounds or has ambiguous paths/ports")
         if any(
@@ -171,6 +186,17 @@ def prepared_cohorts(
             engine=profile.engine,
             engine_config=profile.engine_parameters_json,
         )
+        launch = RuntimeLaunchSpec(
+            image=image,
+            profile=profile,
+            revision=revision,
+            model=spec.model,
+            model_directory=model.directory,
+            readiness_timeout_seconds=spec.readiness_timeout_seconds,
+        )
+        if name == "baseline" and spec.existing_baseline_stage is not None:
+            launch = existing_baseline(journal, spec)
+            profile, revision = launch.profile, launch.revision
         configuration = RunConfig.model_validate(
             {
                 **spec.load.model_dump(),
@@ -205,16 +231,7 @@ def prepared_cohorts(
                 ),
             )
         )
-        runtimes.append(
-            RuntimeLaunchSpec(
-                image=image,
-                profile=profile,
-                revision=revision,
-                model=spec.model,
-                model_directory=model.directory,
-                readiness_timeout_seconds=spec.readiness_timeout_seconds,
-            )
-        )
+        runtimes.append(launch)
     return ProducedReleasePlan(
         job_id=spec.job_id,
         deployment_id=spec.deployment_id,
@@ -283,9 +300,17 @@ async def produce_step(
     cohort, launch = (
         (plan.baseline, runtimes[0]) if name == "baseline" else (plan.candidate, runtimes[1])
     )
-    launch_id = job_id + ":" + name + "-launch"
+    launch_id = (spec.existing_baseline_stage if name == "baseline" else None) or (
+        job_id + ":" + name + "-launch"
+    )
     root = spec.workspace / name
     if action == "launch":
+        if name == "baseline" and spec.existing_baseline_stage is not None:
+            receipt = await owned_disk(
+                lambda: load_launch(journal, journal.state(launch_id), launch)
+            )
+            await runtime.observe(launch, receipt, client)
+            return job_id
         await launch_runtime_stage(
             journal,
             launch_id,
@@ -332,12 +357,13 @@ async def cleanup_unserved(
     spec = await owned_disk(lambda: producer_input(journal, job_id))
     launch_ids = [job_id + ":" + name + "-launch" for name in ("baseline", "candidate")]
     histories = [await owned_disk(lambda key=key: journal.history(key)) for key in launch_ids]
-    if not any(histories):
-        return {"baseline": "not_launched", "candidate": "not_launched"}
     outcomes: dict[str, str] = {}
     for name, launch_id, history in zip(
         ("baseline", "candidate"), launch_ids, histories, strict=True
     ):
+        if name == "baseline" and spec.existing_baseline_stage is not None:
+            outcomes[name] = "borrowed_baseline"
+            continue
         if not history:
             outcomes[name] = "not_launched"
             continue
@@ -363,6 +389,25 @@ async def cleanup_unserved(
         await owned_disk(partial(routes.release_retired_endpoint, backend))
         outcomes[name] = "stopped"
     return outcomes
+
+
+def existing_baseline(journal: ProducerStages, spec: ProducerInput) -> RuntimeLaunchSpec:
+    """Reuse the original completed launch identity; never relabel its image, model or source."""
+    if spec.existing_baseline_stage is None:
+        raise ValueError("existing baseline stage is required")
+    state = journal.state(spec.existing_baseline_stage)
+    frozen = json.loads(journal.artifacts.get(state.input))
+    launch = RuntimeLaunchSpec.model_validate(frozen["specification"])
+    load_launch(journal, state, launch)
+    if (
+        launch.profile.base_url != f"http://127.0.0.1:{spec.baseline.port}/v1"
+        or launch.profile.served_model != spec.load.model
+        or json.loads(launch.profile.engine_parameters_json)
+        != spec.baseline.parameters.model_dump()
+        or launch.revision.revision_id == spec.job_id + "-candidate"
+    ):
+        raise ValueError("existing baseline differs from frozen engine inputs")
+    return launch
 
 
 def cleanup_launch(

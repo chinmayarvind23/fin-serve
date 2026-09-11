@@ -1,11 +1,12 @@
 # Evidence lifecycle
 
-`finserve_producer_lifecycle` is the separate initial local producer workflow. It reads
+`finserve_producer_lifecycle` is the separate local producer workflow. It reads
 `FINSERVE_PRODUCER_REQUEST` (`ProducerExecution`) using the same registry/artifact settings,
 requires frozen rollout settings and a runtime `FINSERVE_API_KEY`, and connects collection
 through probation with failure-preserving cleanup. It requires an existing traffic gateway,
-existing route/control stores and an unused deployment ID at generation zero. Repeated
-deployment support and a complete live GPU Airflow run remain pending. See
+existing route/control stores. Initial deployments use an unused deployment ID at generation
+zero; updates supply the stable `producer.existing_baseline_stage` and current generation.
+A complete live GPU Airflow run remains pending. See
 [the producer workflow](../../docs/airflow-pipeline.md#local-producer-workflow).
 
 `finserve_evidence_lifecycle` registers existing run artifacts, recomputes the canonical

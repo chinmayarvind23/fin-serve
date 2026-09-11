@@ -21,7 +21,12 @@ from finserve.registry.engine_entrypoint import VLLMParameters
 from finserve.registry.managed_runtime import DockerRuntime
 from finserve.registry.metadata import Registry, RegistryConflict
 from finserve.registry.produced_release import register_produced_release
-from finserve.registry.producer_pipeline import ProducerExecution, freeze_stage
+from finserve.registry.producer_pipeline import (
+    ProducerExecution,
+    execution_input,
+    freeze_stage,
+    verify_borrowed_baseline,
+)
 from finserve.registry.producer_rollout import rollout_stage
 from finserve.registry.producer_runtime import (
     ProducerEngine,
@@ -36,7 +41,7 @@ from finserve.registry.producer_stages import ProducerStages
 from finserve.registry.release_gate import evaluate_gate
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage
 from finserve.reliability.promotion import PromotionPolicy
-from finserve.reliability.rollback import DeploymentStore
+from finserve.reliability.rollback import ControlConflict, DeploymentStore
 from finserve.reliability.warm_routes import WarmRouteStore
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -145,7 +150,18 @@ async def test_producer_derives_actual_build_and_runs_collectors(
         ) -> RuntimeImage:
             """Only Docker is a fixture; its expected model digest comes from fetched file bytes."""
             assert build_spec.model_manifest_sha256 == manifest.digest()
-            return template.image.model_copy(update={"specification": build_spec})
+            changed = build_spec.source_revision != template.image.specification.source_revision
+            return template.image.model_copy(
+                update={
+                    "specification": build_spec,
+                    "image_local_id": "sha256:" + "d" * 64
+                    if changed
+                    else template.image.image_local_id,
+                    "image_manifest_digest": "sha256:" + "d" * 64
+                    if changed
+                    else template.image.image_manifest_digest,
+                }
+            )
 
         def client(config: RunConfig) -> httpx.AsyncClient:
             """Use the same deterministic protocol fixture on the isolated performance loop."""
@@ -172,15 +188,18 @@ async def test_producer_derives_actual_build_and_runs_collectors(
         )
 
         class CohortDaemon(Daemon):
-            """The two fixture listeners have independently declared ports instead of legacy8060."""
+            """Fixture listeners have independently declared ports and container identities."""
 
             def inspection(self, attempt: str, directory: Path) -> dict[str, Any]:
                 """Retain existing ownership fields and report this cohort's declared listener."""
                 result = super().inspection(attempt, directory)
-                result["Id"] = (
-                    "e" if self.spec.revision.revision_id.endswith("baseline") else "f"
-                ) * 64
-                port = "9000" if self.spec.revision.revision_id.endswith("baseline") else "9001"
+                name = self.spec.revision.revision_id
+                identity, port = {
+                    "producer-baseline": ("e", "9000"),
+                    "producer-candidate": ("f", "9001"),
+                    "second-candidate": ("d", "9002"),
+                }[name]
+                result["Id"] = identity * 64
                 result["HostConfig"]["PortBindings"] = {
                     "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": port}]
                 }
@@ -235,6 +254,71 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                 assert (
                     await asyncio.to_thread(rollout_stage, spec.job_id, "probation") == spec.job_id
                 )
+                second = ProducerInput.model_validate(
+                    {
+                        **spec.model_dump(),
+                        "job_id": "second",
+                        "expected_generation": 1,
+                        "existing_baseline_stage": "producer:candidate-launch",
+                        "baseline": spec.candidate,
+                        "candidate": ProducerEngine(port=9002, parameters=VLLMParameters()),
+                        "source_revision": "d" * 40,
+                        "workspace": tmp_path / "second-work",
+                    }
+                )
+                request_file.write_text(
+                    execution.model_copy(update={"producer": second}).model_dump_json()
+                )
+                assert await asyncio.to_thread(freeze_stage) == "second"
+                assert await cleanup_unserved(
+                    journal, "second", routes, control, DockerRuntime()
+                ) == {
+                    "baseline": "borrowed_baseline",
+                    "candidate": "not_launched",
+                }
+                for step in ("fetch", "build", "freeze"):
+                    await produce_step(journal, "second", step, http, DockerRuntime())
+                second_plan, second_runtimes = prepared_cohorts(journal, second)
+                assert second_runtimes[0] == runtimes[1]
+                assert second_runtimes[1].image != runtimes[1].image
+                assert second_plan.baseline.performance.revision == runtimes[1].revision
+                assert (
+                    second_plan.baseline.performance.configuration.revision == spec.source_revision
+                )
+                original_launch = journal.state("producer:candidate-launch")
+                baseline_creates = sum(item[2] == "create" for item in daemons["candidate"].calls)
+                fresh = CohortDaemon(second_runtimes[1])
+                for name, daemon in (("baseline", daemons["candidate"]), ("candidate", fresh)):
+                    for action in ("launch", "quality", "performance"):
+                        await produce_step(
+                            journal,
+                            "second",
+                            cast(ProducerStep, name + "_" + action),
+                            http,
+                            DockerRuntime(daemon),
+                        )
+                assert journal.history("second:baseline-launch") == []
+                assert journal.state("producer:candidate-launch") == original_launch
+                assert (
+                    sum(item[2] == "create" for item in daemons["candidate"].calls)
+                    == baseline_creates
+                )
+                assert register_produced_release(journal, "second:release-plan") == "second"
+                assert evaluate_gate(registry, journal.artifacts, "second").status == "approved"
+                for action in ("prepare", "deploy", "acknowledge", "probation"):
+                    assert await asyncio.to_thread(rollout_stage, "second", action) == "second"
+                current = control.deployment(spec.deployment_id)
+                assert current.generation == 2 and current.known_good_revision == "second-candidate"
+                assert await cleanup_unserved(
+                    journal, "second", routes, control, DockerRuntime()
+                ) == {
+                    "baseline": "borrowed_baseline",
+                    "candidate": "preserved_for_traffic",
+                }
+                assert daemons["candidate"].container is not None
+                # A new collection task cannot continue against the now superseded baseline.
+                with pytest.raises(ControlConflict, match="current stable"):
+                    verify_borrowed_baseline(journal, execution_input(journal, "second"))
             else:
                 with pytest.raises(ValueError, match="approved canonical"):
                     await asyncio.to_thread(rollout_stage, spec.job_id, "prepare")

@@ -10,6 +10,7 @@ from finserve.contracts.rollout import RolloutSettings
 from finserve.registry.lifecycle import LifecycleService, LifecycleSpec
 from finserve.registry.produced_release import register_produced_release
 from finserve.registry.producer_pipeline import execution_input, journal_runtime
+from finserve.registry.producer_runtime import existing_baseline
 from finserve.registry.release_activation import (
     acknowledge_release,
     complete_probation,
@@ -49,10 +50,15 @@ def rollout_stage(job_id: str, step: RolloutStep) -> str:
         register_produced_release(journal, job_id + ":release-plan")
         spec = LifecycleSpec.model_validate_json(journal.registry.specification(job_id))
         producer = frozen.execution.producer
+        baseline_id = (
+            existing_baseline(journal, producer).revision.revision_id
+            if producer.existing_baseline_stage is not None
+            else job_id + "-baseline"
+        )
         if (
             spec.deployment_id != producer.deployment_id
             or spec.expected_generation != producer.expected_generation
-            or spec.expected_revision != job_id + "-baseline"
+            or spec.expected_revision != baseline_id
             or spec.target.revision_id != job_id + "-candidate"
             or spec.policy != producer.policy
         ):

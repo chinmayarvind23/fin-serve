@@ -17,6 +17,7 @@ from finserve.registry.producer_runtime import (
     ProducerInput,
     ProducerStep,
     cleanup_unserved,
+    existing_baseline,
     freeze_producer,
     produce_step,
     producer_input,
@@ -25,7 +26,7 @@ from finserve.registry.producer_stages import ProducerStages
 from finserve.registry.producer_tasks import declare_input
 from finserve.reliability.rollback import DeploymentStore
 from finserve.reliability.store_identity import existing_identity
-from finserve.reliability.warm_routes import WarmRouteStore
+from finserve.reliability.warm_routes import BackendConfiguration, WarmBackend, WarmRouteStore
 
 
 def existing_store(path: Path) -> Path:
@@ -100,6 +101,28 @@ def execution_input(journal: ProducerStages, job_id: str) -> FrozenExecution:
     return execution
 
 
+def verify_borrowed_baseline(journal: ProducerStages, frozen: FrozenExecution) -> None:
+    """A referenced launch may be borrowed only while it remains this deployment's stable route."""
+    spec = frozen.execution.producer
+    if spec.existing_baseline_stage is None:
+        return
+    launch = existing_baseline(journal, spec)
+    routes, control = frozen.stores()
+    routes.require_stable_baseline(
+        control,
+        spec.deployment_id,
+        WarmBackend(
+            revision=launch.revision,
+            serving_profile=launch.profile,
+            configuration=BackendConfiguration(
+                base_url=launch.profile.base_url,
+                model=launch.profile.served_model,
+            ),
+        ),
+        spec.expected_generation,
+    )
+
+
 def freeze_stage(*, require_rollout: bool = False) -> str:
     """Read one bounded server-owned request; retries reject any changed job or store mapping."""
     with Path(os.environ["FINSERVE_PRODUCER_REQUEST"]).open("rb") as source:
@@ -112,9 +135,14 @@ def freeze_stage(*, require_rollout: bool = False) -> str:
     execution.verify_stores()
     with journal_runtime() as journal:
         if execution.rollout is not None:
-            if execution.producer.expected_generation != 0:
-                raise ValueError("producer rollout currently requires an initial deployment")
-            if not journal.history(execution.producer.job_id + ":execution"):
+            if (
+                execution.producer.expected_generation != 0
+                and execution.producer.existing_baseline_stage is None
+            ):
+                raise ValueError("noninitial deployment requires an existing baseline stage")
+            if execution.producer.existing_baseline_stage is None and not journal.history(
+                execution.producer.job_id + ":execution"
+            ):
                 routes = WarmRouteStore(
                     execution.routes, expected_identity=existing_identity(execution.routes)
                 )
@@ -135,6 +163,8 @@ def freeze_stage(*, require_rollout: bool = False) -> str:
             routes_identity=existing_identity(execution.routes),
             control_identity=existing_identity(execution.control),
         )
+        if not journal.history(job_id + ":execution"):
+            verify_borrowed_baseline(journal, frozen)
         declare_input(journal, job_id + ":execution", frozen.model_dump(mode="json"))
         return job_id
 
@@ -147,7 +177,8 @@ def collection_client() -> httpx.AsyncClient:
 def collection_stage(job_id: str, step: ProducerStep) -> str:
     """Run one owned producer action to completion before closing the per-task resources."""
     with journal_runtime() as journal:
-        execution_input(journal, job_id)
+        frozen = execution_input(journal, job_id)
+        verify_borrowed_baseline(journal, frozen)
 
         async def collect() -> str:
             """Use one client lifetime per task; inner stages retain cancellation ownership."""
