@@ -35,6 +35,11 @@ the deadline. These controls do not prove remote GPU cancellation or release app
 complete producer-to-activation Airflow path and a live GPU run through this collection stage
 remain pending.
 
+The quality collector also preserves unresolved HTTP cleanup if recording the failed request,
+closing the raw file or publishing terminal evidence fails. Its stage remains running for
+reconciliation. Partial files cannot authorize retry or serve as completed quality receipts;
+local transport cleanup does not establish remote inference termination.
+
 `DeploymentStore` uses SQLite for known-good revisions, decisions, detector signals and rollback state. `WarmRouteStore` is a separate SQLite store representing the external traffic route, with its own generation and idempotency receipts. Registry approval does not imply traffic activation or verified recovery.
 
 MLflow is an optional reporting mirror with verified decision-to-run binding; it cannot authorize deployment. Local MLflow integration is tested. Redis owns ephemeral serving state, never evidence or recovery truth. [Airflow pipeline](airflow-pipeline.md) describes the implemented lifecycle and remaining producer orchestration.

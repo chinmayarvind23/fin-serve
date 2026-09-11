@@ -78,96 +78,105 @@ async def _collect_quality(
     count = 0
     status: Literal["completed", "interrupted", "failed"] = "failed"
     raw_digest = hashlib.sha256()
+    closure_failed = False
     try:
-        with (output / "requests.jsonl").open("xb") as raw:
-            for index, case in enumerate(specification.suite.cases):
-                item = WorkItem(
-                    case_id=case.case_id,
-                    family=case.family,
-                    prompt=case.prompt,
-                    max_tokens=specification.max_tokens,
-                )
-                row = await request_one(
-                    client,
-                    specification.endpoint(),
-                    item,
-                    index,
-                    time.perf_counter(),
-                    specification.configuration,
-                    "quality",
-                )
-                encoded = (
-                    json.dumps(
-                        {
-                            "request": request_payload(item, specification.configuration),
-                            "response": row.model_dump(),
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n"
-                ).encode()
-
-                def append(encoded: bytes = encoded, row: RequestRecord = row) -> None:
-                    """Drain a row write before its file handle can close or staging can unwind."""
-                    nonlocal count
-                    raw.write(encoded)
-                    raw.flush()
-                    raw_digest.update(encoded)
-                    count += 1
-                    if row.success:
-                        outputs[row.case_id] = row.output
-
-                await owned_disk(append)
-                if row.error == "HTTPClosureError":
-                    raise HTTPClosureError("local HTTP cleanup remains unresolved")
-                # Retain the crossing record, then stop offering work. Overshoot is bounded
-                # by one recorder event/output limit; an oversized collection cannot qualify.
-                if raw.tell() > specification.maximum_raw_bytes:
-                    raise ValueError("quality collection exceeded raw evidence byte budget")
-                if row.error == "CancelledError":
-                    raise asyncio.CancelledError
-        expires = deadline.when()
-        assert expires is not None
-        if asyncio.get_running_loop().time() >= expires:
-            raise TimeoutError("quality collection deadline expired")
-        status = "completed"
-    except asyncio.CancelledError:
-        status = "failed" if deadline.expired() else "interrupted"
-        raise
-    finally:
-        result = QualityCollectionResult(
-            specification_sha256=specification.digest(),
-            suite_hash=specification.suite.digest(),
-            request_mapping_sha256=specification.configuration.request_mapping_digest(),
-            requests_sha256=raw_digest.hexdigest(),
-            status=status,
-            planned=len(specification.suite.cases),
-            recorded=count,
-            successful=len(outputs),
-            outputs=outputs,
-        )
-
-        def publish() -> None:
-            """Keep terminal evidence publication owned even when native disk work outlives time."""
-            write_json(output / "result.json", result.model_dump())
-            write_json(
-                output / "status.json", {"status": status, "specification": specification.digest()}
-            )
-
         try:
-            await owned_disk(publish)
+            with (output / "requests.jsonl").open("xb") as raw:
+                for index, case in enumerate(specification.suite.cases):
+                    item = WorkItem(
+                        case_id=case.case_id,
+                        family=case.family,
+                        prompt=case.prompt,
+                        max_tokens=specification.max_tokens,
+                    )
+                    row = await request_one(
+                        client,
+                        specification.endpoint(),
+                        item,
+                        index,
+                        time.perf_counter(),
+                        specification.configuration,
+                        "quality",
+                    )
+                    if row.error == "HTTPClosureError":
+                        closure_failed = True
+                    encoded = (
+                        json.dumps(
+                            {
+                                "request": request_payload(item, specification.configuration),
+                                "response": row.model_dump(),
+                            },
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    ).encode()
+
+                    def append(encoded: bytes = encoded, row: RequestRecord = row) -> None:
+                        """Drain the write before closing its file or unwinding the stage."""
+                        nonlocal count
+                        raw.write(encoded)
+                        raw.flush()
+                        raw_digest.update(encoded)
+                        count += 1
+                        if row.success:
+                            outputs[row.case_id] = row.output
+
+                    await owned_disk(append)
+                    if row.error == "HTTPClosureError":
+                        raise HTTPClosureError("local HTTP cleanup remains unresolved")
+                    # Retain the crossing record, then stop offering work. Overshoot is bounded
+                    # by one recorder event/output limit; an oversized collection cannot qualify.
+                    if raw.tell() > specification.maximum_raw_bytes:
+                        raise ValueError("quality collection exceeded raw evidence byte budget")
+                    if row.error == "CancelledError":
+                        raise asyncio.CancelledError
+            expires = deadline.when()
+            assert expires is not None
+            if asyncio.get_running_loop().time() >= expires:
+                raise TimeoutError("quality collection deadline expired")
+            status = "completed"
         except asyncio.CancelledError:
             status = "failed" if deadline.expired() else "interrupted"
-            result = result.model_copy(update={"status": status})
-            await owned_disk(publish)
             raise
-        expires = deadline.when()
-        assert expires is not None
-        if status == "completed" and asyncio.get_running_loop().time() >= expires:
-            status = "failed"
-            result = result.model_copy(update={"status": status})
-            await owned_disk(publish)
-            raise TimeoutError("quality publication exceeded deadline")
+        finally:
+            result = QualityCollectionResult(
+                specification_sha256=specification.digest(),
+                suite_hash=specification.suite.digest(),
+                request_mapping_sha256=specification.configuration.request_mapping_digest(),
+                requests_sha256=raw_digest.hexdigest(),
+                status=status,
+                planned=len(specification.suite.cases),
+                recorded=count,
+                successful=len(outputs),
+                outputs=outputs,
+            )
+
+            def publish() -> None:
+                """Own terminal publication even when native disk work outlives the deadline."""
+                write_json(output / "result.json", result.model_dump())
+                write_json(
+                    output / "status.json",
+                    {"status": status, "specification": specification.digest()},
+                )
+
+            try:
+                await owned_disk(publish)
+            except asyncio.CancelledError:
+                status = "failed" if deadline.expired() else "interrupted"
+                result = result.model_copy(update={"status": status})
+                await owned_disk(publish)
+                raise
+            expires = deadline.when()
+            assert expires is not None
+            if status == "completed" and asyncio.get_running_loop().time() >= expires:
+                status = "failed"
+                result = result.model_copy(update={"status": status})
+                await owned_disk(publish)
+                raise TimeoutError("quality publication exceeded deadline")
+    finally:
+        # Preserve uncertainty even when raw close or terminal evidence publication also fails.
+        if closure_failed:
+            raise HTTPClosureError("local HTTP cleanup remains unresolved") from None
     return result
 
 

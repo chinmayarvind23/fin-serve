@@ -5,6 +5,7 @@ import hashlib
 import threading
 from collections.abc import AsyncIterator, Generator
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -407,3 +408,95 @@ async def test_cancel_during_http_close_retains_stage_ownership(
         assert len(records) == 1
         assert "HTTPClosureError" in records[0].read_text()
         assert "answer" in records[0].read_text()
+
+
+@pytest.mark.parametrize("storage_fault", ["none", "write", "close", "terminal", "all"])
+async def test_quality_close_failure_survives_evidence_errors(
+    journal: ProducerStages, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, storage_fault: str
+) -> None:
+    """Combined transport/storage failures stay unresolved and cannot offer a retry request."""
+    from finserve.registry.quality_collection import write_json
+
+    calls = 0
+    original_open = Path.open
+
+    class Stream(httpx.AsyncByteStream):
+        """Exercise the real chat parser and owned response cleanup."""
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            """Expose content before reporting uncertain transport release."""
+            yield (
+                b'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n'
+                b'data: {"usage":{"completion_tokens":1}}\n\ndata: [DONE]\n\n'
+            )
+
+        async def aclose(self) -> None:
+            """The release failure is authoritative even if no evidence marker can be stored."""
+            raise OSError("fixture HTTP close failed")
+
+    class Raw:
+        """Inject storage faults around a real raw file without affecting registry or CAS."""
+
+        def __init__(self, stream: Any) -> None:
+            """Retain the file so the test always closes its actual handle."""
+            self.stream = stream
+
+        def __enter__(self) -> "Raw":
+            """Intercept only the raw recorder's operations."""
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            """Close first, then model an error from the buffered final flush."""
+            self.stream.close()
+            if storage_fault in {"close", "all"}:
+                raise OSError("fixture raw close failed")
+
+        def write(self, data: bytes) -> int:
+            """A partial write does not leave a parseable cleanup-failure marker."""
+            if storage_fault in {"write", "all"}:
+                self.stream.write(data[:7])
+                raise OSError("fixture partial write")
+            return cast(int, self.stream.write(data))
+
+        def flush(self) -> None:
+            """Normal fixtures keep the original persistence behavior."""
+            self.stream.flush()
+
+        def tell(self) -> int:
+            """Preserve collector byte accounting in nonfailing cases."""
+            return cast(int, self.stream.tell())
+
+    def open_raw(path: Path, *args: Any, **kwargs: Any) -> Any:
+        """Only the collector's raw creation uses the fault-injecting file wrapper."""
+        stream = cast(Any, original_open(path, *args, **kwargs))
+        if path.name == "requests.jsonl" and args and args[0] == "xb":
+            return Raw(stream)
+        return stream
+
+    def terminal_write(path: Path, value: object) -> None:
+        """Fail terminal evidence while permitting pre-request input freezing."""
+        if storage_fault in {"terminal", "all"} and path.name == "result.json":
+            raise OSError("fixture terminal write failed")
+        write_json(path, value)
+
+    def response(request: httpx.Request) -> httpx.Response:
+        """Count actual offers so an accidental retry cannot pass as mere journal behavior."""
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, stream=Stream())
+
+    monkeypatch.setattr(Path, "open", open_raw)
+    monkeypatch.setattr("finserve.registry.quality_collection.write_json", terminal_write)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+        with pytest.raises(HTTPClosureError):
+            await quality_stage(
+                journal, "job:combined", client, quality_specification(), tmp_path / "work"
+            )
+        state = journal.state("job:combined")
+        assert state.status == "running" and state.reconciliation is None and state.output is None
+        with pytest.raises(RegistryConflict):
+            await quality_stage(
+                journal, "job:combined", client, quality_specification(), tmp_path / "work"
+            )
+        assert journal.state("job:combined") == state
+    assert calls == 1
