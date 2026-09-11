@@ -1,0 +1,40 @@
+{
+  "profile_id": "vllm-qwen25-05b-eager-local-8gb-v1",
+  "validation_status": "candidate_not_executed",
+  "engine": "vllm",
+  "engine_package_version": "0.29.0",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "tokenizer_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "license": "Apache-2.0",
+  "hardware_target": "one NVIDIA CUDA GPU with 8 GiB VRAM, Linux or GPU-enabled WSL2",
+  "base_url": "http://127.0.0.1:8001/v1",
+  "request_api": "completions",
+  "served_model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+  "dtype": "float16",
+  "context_tokens": 1024,
+  "max_concurrent_sequences": 8,
+  "gpu_memory_fraction": 0.65,
+  "prefix_cache": false,
+  "cuda_graphs": false,
+  "launch_argv": [
+    "vllm", "serve", "Qwen/Qwen2.5-0.5B-Instruct",
+    "--revision", "7ae557604adf67be50417f59c2c2f167def9a775",
+    "--tokenizer-revision", "7ae557604adf67be50417f59c2c2f167def9a775",
+    "--served-model-name", "Qwen/Qwen2.5-0.5B-Instruct",
+    "--host", "127.0.0.1", "--port", "8001",
+    "--dtype", "float16", "--max-model-len", "1024",
+    "--max-num-seqs", "8", "--max-num-batched-tokens", "1024",
+    "--gpu-memory-utilization", "0.65",
+    "--no-enable-prefix-caching", "--enforce-eager",
+    "--generation-config", "vllm"
+  ],
+  "measurement_notes": [
+    "This is an unexecuted launch candidate, not evidence that the configuration fits or performs well.",
+    "Run one GPU engine at a time; the memory budget is not a shared-GPU reservation.",
+    "Freeze exact package lock, CUDA/driver versions, model/tokenizer revision, hardware and launch arguments in each measured run.",
+    "Use the same raw prompt bytes, max_tokens, temperature and workload for SGLang comparison.",
+    "Eager mode reduces startup/graph memory complexity and is a baseline, not the optimized candidate.",
+    "Never use mutable latest container tags as recorded image identity; resolve a digest before deployment."
+  ]
+}

@@ -51,9 +51,9 @@ async def test_disconnected_send_releases_lease(body_index: int) -> None:
         nonlocal bodies_sent
         if message["type"] == "http.response.body":
             bodies_sent += 1
-        if (
-            body_index == 0 and message["type"] == "http.response.start"
-        ) or (body_index > 0 and bodies_sent == body_index):
+        if (body_index == 0 and message["type"] == "http.response.start") or (
+            body_index > 0 and bodies_sent == body_index
+        ):
             raise OSError("connection lost")
 
     with pytest.raises(ClientDisconnect):

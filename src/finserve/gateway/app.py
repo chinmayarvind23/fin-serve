@@ -50,6 +50,7 @@ class Lease:
     admission: Admission
     metrics: Metrics
     released: bool = False
+    started: bool = False
 
     def release(self) -> None:
         """Response and generator both clean up, but only the first returns capacity."""
@@ -57,6 +58,8 @@ class Lease:
             self.released = True
             self.admission.release()
             self.metrics.active.dec()
+            if not self.started:
+                self.metrics.requests.labels(outcome="cancelled_before_stream").inc()
 
 
 class OwnedStreamingResponse(StreamingResponse):
@@ -102,12 +105,19 @@ class Serving:
     ) -> AsyncGenerator[str]:
         """Never retry visible output; close the iterator on failure or client cancellation."""
         outcome, count, first = "cancelled", 0, None
+        finish_reason = "length"
         lease = lease or Lease(self.admission, self.metrics)
+        lease.started = True
         iterator: AsyncIterator[EngineToken] | None = None
         try:
+            remaining = max(0, request.timeout_seconds - (time.perf_counter() - received))
+            if remaining <= 0:
+                raise TimeoutError
             iterator = self.engine.stream(request)
-            async with asyncio.timeout(request.timeout_seconds):
+            async with asyncio.timeout(remaining):
                 async for token in iterator:
+                    if token.finish_reason is not None:
+                        finish_reason = token.finish_reason
                     count += token.generated_tokens
                     self.metrics.tokens.inc(token.generated_tokens)
                     if token.text and first is None:
@@ -125,14 +135,13 @@ class Serving:
                             "choices": [choice],
                         }
                     )
-            outcome = "success"
             yield sse(
                 {
                     "id": request.request_id,
                     "choices": [
                         {
                             "index": 0,
-                            "finish_reason": "length",
+                            "finish_reason": finish_reason,
                             "delta" if chat else "text": {} if chat else "",
                         }
                     ],
@@ -141,6 +150,7 @@ class Serving:
                 }
             )
             yield "data: [DONE]\n\n"
+            outcome = "success"
         except Exception as exc:
             outcome = "timeout" if isinstance(exc, TimeoutError) else "engine_failed"
             yield sse(
@@ -166,7 +176,9 @@ class Serving:
         self, payload: InferenceRequest, request: Request, chat: bool = False
     ) -> Response:
         """Validate before admission; the stream owns its lease until consumption finishes."""
-        received = time.perf_counter()
+        received = float(
+            request.scope.get("state", {}).get("finserve_received", time.perf_counter())
+        )
         if self.api_key is not None and not hmac.compare_digest(
             request.headers.get("authorization", "").encode(), f"Bearer {self.api_key}".encode()
         ):
@@ -194,6 +206,7 @@ async def collect_response(
     """Reuse stream accounting for non-stream clients so terminal semantics stay identical."""
     output: list[str] = []
     usage: dict[str, object] = {}
+    finish_reason = "length"
     async with aclosing(stream):
         async for frame in stream:
             if frame == "data: [DONE]\n\n":
@@ -202,6 +215,8 @@ async def collect_response(
             if "error" in data:
                 return JSONResponse(data, status_code=502)
             for choice in data.get("choices", []):
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
                 output.append(
                     choice.get("delta", {}).get("content", "") if chat else choice.get("text", "")
                 )
@@ -209,7 +224,7 @@ async def collect_response(
     content = "".join(output)
     choice = {
         "index": 0,
-        "finish_reason": "length",
+        "finish_reason": finish_reason,
         "message" if chat else "text": {"role": "assistant", "content": content}
         if chat
         else content,
@@ -283,6 +298,12 @@ def from_env() -> FastAPI:
         )
     elif backend == "fixture":
         engine = FixtureEngine()
+    elif backend in {"vllm", "sglang"}:
+        from finserve.engines.openai_adapter import OpenAICompletionEngine
+
+        engine = OpenAICompletionEngine(
+            os.environ["FINSERVE_ENGINE_URL"], api_key=os.getenv("FINSERVE_ENGINE_API_KEY")
+        )
     else:
         raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
     return create_app(

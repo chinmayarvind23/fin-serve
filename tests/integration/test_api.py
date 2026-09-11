@@ -1,6 +1,7 @@
 """Exercise stream, errors, cancellation cleanup and overload through ASGI."""
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 
 import httpx
@@ -80,7 +81,7 @@ async def test_cancel_releases_admission() -> None:
     serving = app.state.serving
     assert serving.admission.acquire()
     serving.metrics.active.inc()
-    stream = serving.events(InferenceRequest(prompt="hi"), 0.0, False)
+    stream = serving.events(InferenceRequest(prompt="hi"), time.perf_counter(), False)
     task = asyncio.create_task(anext(stream))
     await asyncio.sleep(0.01)
     task.cancel()

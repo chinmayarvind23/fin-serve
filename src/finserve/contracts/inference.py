@@ -63,3 +63,4 @@ class EngineToken(BaseModel):
     text: str
     token_id: int | None = None
     generated_tokens: int = Field(default=1, ge=0)
+    finish_reason: Literal["stop", "length"] | None = None
