@@ -63,6 +63,16 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+The producer task runtime freezes a `ProducerInput` before fetching. After verified model
+fetch and image build, it derives both runtime revisions, serving profiles and collection
+specifications from those receipts. It verifies source/model/image linkage and the model's
+expected workspace path, then freezes the release plan before offering inference. Dispatch
+validates task names at runtime and uses one-colon journal IDs such as
+`job:baseline-performance`. Only the job ID and task name cross the orchestration boundary;
+each task reloads immutable inputs. Launch and collector retry behavior stays with the
+existing durable stages. Full DAG deployment, probation and failure cleanup are still being
+connected; this task runtime alone is not complete release automation.
+
 Probation completion reconstructs the full monitor observation chain and requires at least
 two healthy probes, the configured number of probes, and the configured interval between
 adjacent completion times. The CAS evidence includes the frozen monitor policy and ordered

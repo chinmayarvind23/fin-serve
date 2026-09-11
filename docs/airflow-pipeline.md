@@ -43,6 +43,20 @@ The warm adapter switches traffic between already running registered backends an
 
 ## Producer integration still to complete
 
+`producer_runtime.freeze_producer` now freezes server-owned source/model inputs, paired typed
+engine configurations, load, suite, policy and workspace. `produce_step` accepts that job ID
+and an explicit fetch/build/freeze/launch/quality/performance task name. It derives image and
+model identities from completed producer receipts, then freezes the collection plan before
+launching either cohort. Runtime identity fields in the load template must be `undeclared`;
+the verified build fills them. Hardware must be declared. Ports must be distinct and bound
+to loopback. The implementation currently supports the pinned local vLLM/Docker runtime.
+
+The task runtime is tested from actual fixture-byte fetch through synthetic Docker build and
+launch, real collector protocol handling, registration and unchanged gate rejection. The
+next wiring must include failure cleanup and the activation/probation tail before exposing
+the complete producer DAG. Both warm cohorts require sufficient host GPU capacity; task
+serialization does not make their combined resident memory disappear.
+
 Model fetch/verification and committed-source runtime build APIs now run locally. Actual image preflight, GPU measurement and canonical rejection evidence are retained. These producer steps are not yet Airflow tasks: the current DAG consumes their completed artifacts.
 
 The local producer implements durable model/image/quality receipts, managed runtime startup and cleanup, and frozen performance collection bound to a runtime start. Remaining work is to connect these stages into the full Airflow producer DAG with image publication where required, controller acknowledgment, probation and rollback wiring, then exercise that complete path. The 32-case release suite remains frozen. A three-case development smoke cannot substitute for it, and failed quality cannot be waived to demonstrate activation.
