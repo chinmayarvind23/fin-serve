@@ -1,5 +1,5 @@
 /** Independent edge regressions cover consumers that stop pulling before a deadline. */
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { createProxy } from "./proxy";
 
 const key = "review-edge-credential-length-32";
@@ -29,23 +29,47 @@ function request(): Request {
 
 test("deadline returns capacity even when response is never pulled", async () => {
   const upstream = origin(() => new Response("data: token\n\n"));
+  const timeoutMs = 12345;
+  const realSetTimeout = globalThis.setTimeout;
+  let expire: (() => void) | undefined;
+  // Hold only this proxy's deadline; real HTTP and other timers keep their normal behavior.
+  const controlledTimeout = Object.assign(
+    (...parameters: Parameters<typeof setTimeout>) => {
+      const [callback, delay, ...args] = parameters;
+      if (delay === timeoutMs) {
+        expire = () => callback(...args);
+        return realSetTimeout(() => {}, 300000);
+      }
+      return realSetTimeout(callback, delay, ...args);
+    },
+    { __promisify__: realSetTimeout.__promisify__ },
+  );
+  const timer = spyOn(globalThis, "setTimeout").mockImplementation(
+    controlledTimeout as typeof setTimeout,
+  );
   const proxy = createProxy({
     upstream: upstream.url.toString(),
     apiKey: key,
     upstreamKey,
     maxActive: 1,
-    timeoutMs: 30,
+    timeoutMs,
   });
-  const unconsumed = await proxy(request());
-  expect(unconsumed.status).toBe(200);
-  expect((await proxy(request())).status).toBe(429);
-  await Bun.sleep(75);
-  const afterDeadline = await proxy(request());
+  let unconsumed: Response | undefined;
+  let afterDeadline: Response | undefined;
   try {
+    unconsumed = await proxy(request());
+    expect(unconsumed.status).toBe(200);
+    expect((await proxy(request())).status).toBe(429);
+    expect(expire).toBeDefined();
+    expire?.();
+    timer.mockRestore();
+    afterDeadline = await proxy(request());
     expect(afterDeadline.status).toBe(200);
+    await expect(unconsumed.text()).rejects.toThrow("UPSTREAM_STREAM_FAILED");
   } finally {
-    await unconsumed.body?.cancel().catch(() => {});
-    await afterDeadline.body?.cancel().catch(() => {});
+    timer.mockRestore();
+    await unconsumed?.body?.cancel().catch(() => {});
+    await afterDeadline?.body?.cancel().catch(() => {});
   }
 });
 
