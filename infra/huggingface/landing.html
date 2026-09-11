@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>FinServe · Measured serving results</title>
+<link rel="stylesheet" href="./landing.css"></head><body><main>
+<p class="eyebrow">FINSERVE / CPU EVIDENCE EXPLORER</p><h1>Serving results, with their limits attached.</h1>
+<p class="lead">This Space hosts FinServe's evidence browser and GraphQL read service. It serves no model inference and uses no GPU.</p>
+<div class="notice"><strong>The registry starts empty.</strong> Private request records are not packaged into this public deployment. The authenticated explorer is the real application; connecting to this initial registry returns no registered runs. Local data is ephemeral and may disappear when the Space restarts.</div>
+<p><a class="button" href="/explorer">Open the authenticated explorer →</a></p>
+<p class="muted">Registry access requires a separate explorer key supplied by the operator. No credential is embedded in this page. The figures below are public aggregates committed to the project.</p>
+<section><p class="eyebrow">SUSTAINED TEXT MEASUREMENT</p><h2>Baseline and compiled serving</h2>
+<p>The retained benchmark covers 6,144 measured requests across two native configurations. Consult the figure and metadata for the workload, source identity, timing definitions and failed quality gate. These measurements were collected on a local GPU workstation; this CPU Space did not produce them.</p>
+<a href="/public-results/sustained-comparison.png"><img src="/public-results/sustained-comparison.png" alt="FinServe sustained serving comparison with metric definitions and limitations"></a>
+<p><a href="/public-results/sustained-comparison.json">Aggregate metadata (JSON)</a> · <a href="/public-results/sustained-comparison.svg">Vector figure (SVG)</a></p></section>
+<section><p class="eyebrow">QUALIFIED DEVELOPMENT CURVE</p><h2>Concurrency changes the tradeoff</h2>
+<p>Four short, sequential 256-request cohorts varied client concurrency under one native configuration. Historical untracked source files lack byte attestation. The separate quality cohort failed its gate; these points do not identify a production optimum or a quality-approved release.</p>
+<a href="/public-results/concurrency-frontier.png"><img src="/public-results/concurrency-frontier.png" alt="Concurrency frontier with measured durations, latency, throughput and failed quality qualification"></a>
+<p><a href="/public-results/concurrency-frontier.json">Aggregate metadata (JSON)</a> · <a href="/public-results/concurrency-frontier.svg">Vector figure (SVG)</a></p></section>
+<footer><a href="https://github.com/chinmayarvind23/fin-serve">Source repository</a> · <a href="https://github.com/chinmayarvind23/fin-serve/blob/master/docs/performance.md">Methods and scope</a><p>Public aggregates are separate from the authenticated registry. This website cannot promote, roll back or deploy a model.</p></footer>
+</main></body></html>
