@@ -47,3 +47,24 @@ unrelated deployments.
 Record source identity and resolved image digest for each build. The build uses
 the lockfile and pinned uv; resolve the Python base tag to a digest for release
 images. Local functional checks do not establish EKS health or performance.
+
+The gateway image includes the gRPC client required by durable visual jobs. Set
+`FINSERVE_VISUAL_GRPC_TARGET`, `FINSERVE_VISUAL_DB` (a writable external volume),
+`FINSERVE_VISUAL_SERVICE_KEY` and `FINSERVE_API_KEY` to enable them. The worker runs
+separately and uses the same service credential. This image contains no JAX runtime.
+
+Build the CPU Ray runtime from the repository root:
+
+```sh
+docker build -f infra/docker/Dockerfile.ray --build-arg SOURCE_REVISION=<commit> -t <ray-image> .
+```
+
+The image installs the locked distributed dependencies, Bash and wget, and runs as
+UID/GID 1000 to match the Helm chart. GPU engines remain separate. The public API
+uses `FINSERVE_ENGINE=ray-http`, `FINSERVE_ENGINE_URL=<private-Ray-HTTP-URL>` and an
+optional `FINSERVE_RAY_API_KEY` matching the routing actor. This endpoint speaks
+internal NDJSON; callers continue using the public OpenAI-style SSE API.
+
+Both Dockerfiles pin the Python and uv base images by digest. The Ray build still
+resolves Debian package indexes for runtime utilities, so retain the built image
+digest for deployment reproducibility rather than claiming byte-identical rebuilds.
