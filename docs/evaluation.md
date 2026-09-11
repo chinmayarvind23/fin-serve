@@ -1,42 +1,31 @@
 # Evaluation
 
-## Layers
+FinServe separates transport correctness, task correctness, serving agreement and performance. A configuration may complete every request faster while returning wrong answers. The release gate checks these properties independently and retains rejected evidence.
 
-1. Functional correctness: schema, streaming, model selection, cancellation, errors.
-2. Output quality: catches quantization/engine/decoding/artifact regressions.
-3. Performance: latency, throughput, cost.
-4. Reliability/security: overload and failure behavior.
+## Deterministic task quality
 
-## Golden set
+The frozen 32-case suite uses `exact-or-typed-json-v1`. Exact answers strip leading/trailing whitespace, then compare case-sensitive strings. JSON answers must be objects: key order and insignificant JSON whitespace may differ, but field types, extra fields, duplicate keys and nonfinite values are not accepted. Markdown fences are not stripped. Consequently, `No` and `no`, or exact strings `0.20` and `0.2`, differ under this declared grader.
 
-Stable case IDs contain input, task, reference expectation, hard checks, soft scoring config, modality, and length bucket.
+For every case, the evaluator records reference correctness, candidate correctness and reference/candidate parity. Missing or invalid responses fail. Each incorrect candidate answer is a hard failure, so reducing a numeric accuracy threshold cannot average away wrong deterministic answers. Default minimum parity is 0.992 and minimum accuracy is 1.0. At 32 cases, even one disagreement misses that parity threshold.
 
-## Failure-oriented cases
+The original sustained compiled candidate scored 10/32 correct and 24/32 parity, failing the gate. Invalid reference JSON also fails self-parity; identical malformed output is not a valid structured answer. The failures remain in the recorded evidence. The three-case development smoke has a separate suite hash and narrower scope.
 
-Malformed inputs, max-context boundary, unsupported modality, huge image, timeout before first token, cancellation mid-stream, server restart, saturation, Redis unavailable, RDS unavailable while serving, telemetry unavailable, artifact checksum mismatch, quality regression, latency regression, GPU OOM/recovery, duplicate Airflow/deploy retry.
+Chat collection additionally freezes API mode, system prompt and template identity. Both benchmark and quality evidence must use the same declared request mapping. A corrected prompt, stronger model or constrained decoder is a new candidate experiment; it cannot rewrite an earlier result or weaken the frozen grader after failure.
 
-## Gate logic
+## Serving agreement and numerical checks
 
-Examples:
+Load-output parity compares equally sized, nonempty sequences byte for byte. It does not use a correctness oracle. The sustained pair matched 2,479 of 3,072 outputs while failing the independent task suite.
 
-```text
-FAIL if p95 exceeds allowed limit
-FAIL if TTFT regression exceeds allowed delta
-FAIL if throughput falls below allowed floor
-FAIL if success rate falls below floor
-FAIL if quality parity falls below floor
-```
+The PyTorch reference decoder has separate cache-versus-full-prefix, batching and sampling checks. They verify implementation mechanics with reference weights, not pretrained language quality. The JAX/Flax reference generator and pretrained image-understanding route likewise have distinct tests and populations. The [results](results.md) keep the failed color suite separate from three successful chart probes.
 
-All values are versioned configuration.
+## Performance and lifecycle
 
-## Semantic judges
+The benchmark retains scheduled, offered, completed and failed work, authoritative generated-token counts, warmup boundaries and raw timestamps. Its immutable configuration controls the arrival process, concurrency, timeouts and workload identity. The gate recomputes summaries from raw records and checks identity, throughput, latency, transport success and quality before activation.
 
-Only when deterministic/task metrics are insufficient. Use fixed rubric/version, blind ordering when possible, calibration reviewed by a human, and store judge output. Never use a judge for deterministic latency/correctness facts.
+Lifecycle tests cover revision/generation fencing, retries, route activation and recovery. The actual local rollback drill switches already-running fixture endpoints; cloud node recovery and GPU cold start require their own evidence. No local fixture result establishes production availability or billed GPU cost.
 
-## CI tiers
+## Source verification and remaining scope
 
-PR CI: unit/contract/static checks and small eval.
+CI runs Python static checks, unit/contract/integration tests, aggregate coverage and semantic mutation checks, plus Bun HTTP and DOM-emulated tests and builds. Native GPU experiments run separately with explicit manifests. There is no continuous GPU performance job or calibrated semantic-judge service in the current CI workflow.
 
-GPU integration CI: engine startup, small performance/quality/speculation/multimodal smoke.
-
-6,000+ request suite, load/failure, full quality, cost, rollback drill.
+Browser visual review, hosted telemetry, AWS/Hugging Face operation and extended quality populations remain separately tracked work. See [quality gates](quality-gates.md), [benchmark populations](finance-benchmark-suite.md) and [reproducibility](reproducibility.md) for the boundaries of each claim.

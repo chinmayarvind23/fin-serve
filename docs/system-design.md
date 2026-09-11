@@ -1,178 +1,33 @@
-# System Design
+﻿# System design walkthrough
 
-## Design question
+FinServe separates online inference from durable jobs, release decisions and evidence browsing. The [high-level design](HLD.md) describes the implemented ownership boundaries; the [low-level design](LLD.md) maps them to source. This walkthrough explains the main design decisions and their limits.
 
-Design an inference platform that serves streaming text and multimodal workloads, compares serving configurations reproducibly, scales GPU work safely, preserves output quality, and rolls back regressions quickly.
+## Follow one request
 
-## Non-functional conflicts
+A Bun edge bounds the allowed route, upload, response and forwarding duration. FastAPI validates the typed request, checks its configured credential and optional Redis quota, then acquires an application slot. Text inference uses a configured external engine directly or the private Ray HTTP bridge. Ray selects one eligible endpoint and admits a worker lease before generation. The engine owns model weights, continuous batching and KV memory.
 
-```text
-low TTFT <-> large batches
-high utilization <-> queueing headroom
-warm capacity <-> GPU cost
-cache affinity <-> load balance
-speculation speedup <-> proposal overhead
-stage separation <-> transfer/orchestration cost
-```
+The response emits visible content and authoritative final token usage. A network chunk is not a token. Failure after visible output remains a failed stream; another replica does not transparently restart it. Header/body failures and disconnects close the owned iterator, while ambiguous Ray retirement retains capacity. Trace context propagates across private calls without remaining attached while a generator yields to its consumer.
 
-## Capacity intuition
+An image/text request has its own admission and PNG contract, then invokes a pretrained vision-capable engine. The measured stage split moves CPU normalization behind HTTP; it does not split the vision encoder from language decoding. Durable visual generation follows a separate SQLite/gRPC job path and uses an explicitly untrained JAX/Flax reference model.
 
-`request_throughput = successful_completed_requests / measured_wall_time`
+## Capacity and scheduling
 
-`token_throughput = generated_tokens / measured_wall_time`
+Throughput counts successful completed work over the whole measured interval. Token throughput uses authoritative output-token totals. Latency and quality constrain whether a gain is useful. Increasing active sequences may improve batching while consuming KV memory and increasing delay.
 
-`gpu_cost_per_1m = gpu_hourly_cost * gpu_hours / generated_tokens * 1_000_000`
+The router checks health, model/GPU compatibility, snapshot age, memory headroom and reserved/reflected leases. Least-load routing provides the baseline. Adaptive scoring adds a physical-memory term and an explicitly known prefix-affinity bonus. It does not infer per-engine GPU utilization or invent a cache-hit forecast. When two endpoints share one physical GPU and no prefix affinity is declared, that memory term is identical for both; the experiment should not presume an adaptive advantage.
 
-Queueing becomes extremely sensitive when offered load approaches effective service capacity. Simple queueing math is intuition only because token lengths, batching, cache state, and scheduling violate simple assumptions, so the real system is benchmarked.
+Adding Ray CPU proxies does not add GPU capacity. Engine process capacity, Ray worker placement and cloud GPU node capacity are different controls. The current staging chart reserves one GPU for a separate engine and uses a disruptive Recreate update. An overlapping warm canary requires enough measured capacity for both versions.
 
-## Architecture candidates
+## State and control
 
-### A. Single vLLM server
+Redis owns optional quotas and ephemeral cache bytes. SQLite owns durable visual jobs and the tested registry/controller stores. Immutable artifact references bind namespace, size and digest. PostgreSQL and S3 adapters have separate deployment scopes; an RDS/S3 deployment is not implied by local SQLite tests.
 
-Best first benchmark. Low integration overhead. Weak distributed-platform signal. Selected for MVP/baseline.
+The shared gate recomputes raw performance and frozen quality before a candidate may activate. Canonical profiles bind the measured endpoint, model/tokenizer manifests and engine configuration; a Revision binds the image. A route CAS changes active traffic only when its expected revision and generation match. In-flight work keeps its original route. Recovery is verified through real inference and exact revision identity.
 
-### B. FastAPI + Redis queue for every request
+Airflow currently coordinates evidence registration, gate evaluation and the trusted deployment callback. Complete producer orchestration and managed probation remain under construction. The first produced GPU candidate was registered as rejected after failing its small development smoke; that smoke cannot replace the unchanged 32-case release suite.
 
-Explicit async semantics, but poor fit for low-TTFT streaming and duplicates Ray/engine scheduling. Rejected for synchronous text.
+## Evidence and unresolved limits
 
-### C. Ray Serve over engine replicas
+The completed sustained native comparison retained 6,144 requests. Compiled execution increased token throughput 2.64-fold and reduced p95, but worsened median server TTFT and failed strict quality. Those results are not a production availability or cloud cost claim. [Results](results.md) gives the complete populations and limitations.
 
-Supports distributed replica routing, custom policies, autoscaling, placement, and KubeRay. Selected after single-node evidence is stable.
-
-### D. Fully disaggregated multimodal stages
-
-Powerful but premature. Stage-disaggregation is a later measured experiment inspired by modern multimodal serving work.
-
-## Selected architecture
-
-```text
-                           +--------------------+
-                           | Vercel dashboard   |
-                           | TypeScript + Bun   |
-                           +---------+----------+
-                                     |
-                               GraphQL reads
-                                     |
-+---------+   HTTPS/OpenAI   +-------v---------+
-| clients | ---------------->| FastAPI ingress |
-+---------+                  +-------+---------+
-                                     |
-                               auth/admission
-                                     |
-                              +------v-------+
-                              | Ray Serve    |
-                              +---+-------+--+
-                                  |       |
-                          route by load/cache/GPU/modality
-                     +------------+        +----------------+
-                     |                                     |
-                 +---v----+                           +----v----+
-                 | vLLM   |                           | JAX/Flax|
-                 | pool   |                           | pool    |
-                 +---+----+                           +----+----+
-                     |                                     |
-                 +---v----+                           +----v----+
-                 | SGLang |                           | VLM/etc |
-                 | compare|                           | pool    |
-                 +--------+                           +---------+
-
-Ephemeral: Redis
-Evidence/control: RDS + S3 + MLflow + Airflow
-Observability: OTel + Prometheus + Langfuse + Grafana/CloudWatch
-Infrastructure: EKS + KubeRay + Terraform
-```
-
-## Online text flow
-
-1. client opens stream,
-2. gateway auth/validation,
-3. admission checks request size/concurrency,
-4. model routing,
-5. replica routing,
-6. engine scheduler admission,
-7. continuous batching,
-8. stream tokens,
-9. telemetry emitted asynchronously,
-10. sampled metadata recorded.
-
-No Airflow task, RDS query, Elasticsearch query, or Redis job queue is required to emit the first token.
-
-## Adaptive routing
-
-Start with a simple/default load-aware router. Later compare a score such as:
-
-```text
-score =
-  a*normalized_load
-+ b*queue_penalty
-+ c*expected_length_penalty
-- d*cache_affinity
-+ e*health_penalty
-```
-
-Coefficients are configuration. Compare policies on held-out traffic traces.
-
-## Continuous batching
-
-```text
-step 1: [A B C D]
-step 2: [A B C]     D finishes
-step 3: [A B C E]   E joins
-```
-
-This raises utilization with variable output lengths, but excessive active work can pressure KV memory and worsen latency.
-
-## Speculative decoding
-
-If `D` proposal tokens are generated, `A` accepted, and `V` verification steps occur:
-
-```text
-draft_acceptance_rate = A / D
-mean_acceptance_length = 1 + A / V
-```
-
-Speculation is kept only when saved verifier work exceeds proposer/coordination overhead for the workload bucket.
-
-## Multimodal
-
-Two paths:
-
-1. JAX/Flax autoregressive visual-token lab for first principles and compile/batch/speculation-feasibility research.
-2. Engine-supported production-compatible multimodal/VLM path.
-
-Later stage-disaggregation can separate encode/language/visual generation if measured stage imbalance justifies transfer cost.
-
-## Storage
-
-- RDS: authoritative metadata/deployment/benchmark state.
-- S3: large artifacts/results/models/traces.
-- MLflow: optimization/eval/promotion evidence.
-- Redis: ephemeral counters/cache/job state only.
-
-## Autoscaling
-
-Three levels:
-
-```text
-Serve replicas -> Ray worker Pods -> EKS/EC2 GPU nodes
-```
-
-Cold start can include node provisioning, image pull, Ray startup, model load, compile, GPU memory profile. Interactive pools keep a warm floor when required.
-
-## Deployment
-
-```text
-Airflow candidate DAG
- -> verify artifact
- -> optimize/build
- -> offline eval
- -> performance gate
- -> deploy canary
- -> smoke/load
- -> promote
- -> regression? restore known-good revision
-```
-
-## Excluded from hot path unless earned
-
-Kafka, Spark, Elasticsearch, RDS-per-request reads, Airflow online orchestration, a separate microservice per engine feature, and a Redis queue for streaming text.
+Cloud deployment, cold recovery, full hosted observability and the browser demo require their own execution evidence. Local configuration validation and real CPU/GPU integration tests answer narrower questions. The system keeps those boundaries visible instead of treating each installed component as a completed deployment.
