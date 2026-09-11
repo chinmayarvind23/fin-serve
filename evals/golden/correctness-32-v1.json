@@ -1,0 +1,230 @@
+{
+  "suite_id": "original-synthetic-correctness-32-v1",
+  "evaluator_version": "exact-or-typed-json-v1",
+  "cases": [
+    {
+      "case_id": "sec_qa_00",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 400, operating income is 80. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_00",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 400 and capital expenditure is 20. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 400, \"capex\": 20}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_00",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 0 reported revenue 400. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_00",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 100 books and adds 10. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "110",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_01",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 500, operating income is 100. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_01",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 500 and capital expenditure is 21. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 500, \"capex\": 21}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_01",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 1 reported revenue 500. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_01",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 101 books and adds 11. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "112",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_02",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 600, operating income is 120. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_02",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 600 and capital expenditure is 22. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 600, \"capex\": 22}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_02",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 2 reported revenue 600. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_02",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 102 books and adds 12. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "114",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_03",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 700, operating income is 140. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_03",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 700 and capital expenditure is 23. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 700, \"capex\": 23}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_03",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 3 reported revenue 700. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_03",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 103 books and adds 13. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "116",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_04",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 800, operating income is 160. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_04",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 800 and capital expenditure is 24. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 800, \"capex\": 24}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_04",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 4 reported revenue 800. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_04",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 104 books and adds 14. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "118",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_05",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 900, operating income is 180. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_05",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 900 and capital expenditure is 25. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 900, \"capex\": 25}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_05",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 5 reported revenue 900. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_05",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 105 books and adds 15. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "120",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_06",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 1000, operating income is 200. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_06",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 1000 and capital expenditure is 26. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 1000, \"capex\": 26}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_06",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 6 reported revenue 1000. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_06",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 106 books and adds 16. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "122",
+      "kind": "exact"
+    },
+    {
+      "case_id": "sec_qa_07",
+      "family": "SEC_QA",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 1100, operating income is 220. What is operating margin as a decimal? Return only the decimal number.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "0.2",
+      "kind": "exact"
+    },
+    {
+      "case_id": "financial_table_extraction_07",
+      "family": "FINANCIAL_TABLE_EXTRACTION",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nRevenue is 1100 and capital expenditure is 27. Return only a JSON object with numeric keys revenue and capex. No extra keys.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "{\"revenue\": 1100, \"capex\": 27}",
+      "kind": "json"
+    },
+    {
+      "case_id": "earnings_summary_07",
+      "family": "EARNINGS_SUMMARY",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nExample 7 reported revenue 1100. Costs rose. Guidance was unchanged. Did guidance increase? Return only yes or no.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "no",
+      "kind": "exact"
+    },
+    {
+      "case_id": "general_07",
+      "family": "GENERAL",
+      "prompt": "<|im_start|>system\nFollow the requested output format exactly. Use only the facts provided.<|im_end|>\n<|im_start|>user\nA library has 107 books and adds 17. How many books are there now? Return only the integer.<|im_end|>\n<|im_start|>assistant\n",
+      "expected": "124",
+      "kind": "exact"
+    }
+  ]
+}
