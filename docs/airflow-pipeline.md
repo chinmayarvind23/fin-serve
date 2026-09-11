@@ -10,6 +10,19 @@ register_evidence → evaluate_gates → deploy_verified_candidate
 
 ## Inputs and gate
 
+The managed producer registration entry point is `pipeline.register_produced_stage(plan_stage_id)`.
+Before collecting either cohort, `freeze_produced_release` persists a `ProducedReleasePlan`
+containing both performance and quality specifications, four distinct collection stage IDs,
+the target deployment generation and the promotion policy. Registration reconstructs completed
+managed receipts, requires the same launch for each cohort's performance and quality, and
+rejects collection attempts or retained observations predating the plan. It constructs canonical
+gate inputs from raw outputs; callers do not supply a quality result file. Replay performs no
+inference. The original directory-based registration entry point remains for existing evidence.
+
+The managed entry point is tested from fixture launch and collection through canonical gate
+rejection. It is not yet wired into the full Airflow producer DAG, and does not acknowledge
+traffic activation or complete probation.
+
 The trusted worker configures `FINSERVE_PIPELINE_REQUEST`, `FINSERVE_REGISTRY_URL` and `FINSERVE_ARTIFACT_ROOT`. The request identifies existing baseline/candidate run directories, raw quality outputs, a frozen suite, immutable revisions, policy and both canonical serving profiles. Database and artifact references must retain their original namespace across retries.
 
 Registration verifies raw run evidence and persists the lifecycle specification. Canonical jobs record their required gate mode before publishing profile inputs; a missing profile after a crash cannot fall back to a legacy drill gate. Evaluation checks profile/run identities and recomputes performance and quality. Chat cohorts also bind API, system instruction and template digest between performance and quality. Rejection or invalid evidence prevents deployment.

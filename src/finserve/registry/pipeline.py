@@ -12,6 +12,8 @@ from finserve.contracts.deployment import ImmutableModel, Revision
 from finserve.registry.artifacts import LocalArtifactStore
 from finserve.registry.lifecycle import LifecycleService, LifecycleSpec
 from finserve.registry.metadata import Registry
+from finserve.registry.produced_release import register_produced_release
+from finserve.registry.producer_stages import ProducerStages
 from finserve.registry.release_gate import GateRequest, evaluate_gate, freeze_gate_request
 from finserve.reliability.promotion import PromotionPolicy
 from finserve.reliability.rollback import DeploymentAdapter
@@ -48,6 +50,15 @@ def runtime() -> tuple[Registry, LocalArtifactStore]:
     return Registry(os.environ["FINSERVE_REGISTRY_URL"]), LocalArtifactStore(
         Path(os.environ["FINSERVE_ARTIFACT_ROOT"])
     )
+
+
+def register_produced_stage(plan_stage_id: str) -> str:
+    """Pass a frozen plan ID from producer tasks into the existing canonical release stages."""
+    registry, artifacts = runtime()
+    try:
+        return register_produced_release(ProducerStages(registry, artifacts), plan_stage_id)
+    finally:
+        registry.close()
 
 
 def register_stage() -> str:

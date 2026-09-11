@@ -63,6 +63,15 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+Managed release registration begins with a completed immutable plan stage. Its inputs freeze
+policy and both cohort specifications before collection. Registration checks every historical
+collection attempt's start time and both retained pre-collection runtime observations against
+the plan's completion time. This rejects a new stage carrying an older valid receipt. It then
+reconstructs raw performance and quality artifacts, checks their stage inputs and shared launch,
+and builds `QualityEvidence`, `LifecycleSpec` and `GateRequest`. The lifecycle is canonical from
+creation, so interruption before profile publication cannot downgrade its gate mode. Repeating
+registration recomputes evidence and uses immutable registry writes; it does not recollect data.
+
 The managed quality stage shares the completed launch reference with performance collection.
 One durable attempt owns the pre-collection runtime observation, raw quality collection,
 post-collection observation and receipt publication. Both observations must name the same
