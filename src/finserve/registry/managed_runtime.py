@@ -447,6 +447,7 @@ class DockerRuntime:
     async def stop(self, specification: RuntimeLaunchSpec, receipt: RuntimeReceipt) -> None:
         """Stop the exact owned start and verify stopped state before removing its container."""
         spec = RuntimeLaunchSpec.model_validate_json(specification.model_dump_json())
+        receipt = RuntimeReceipt.model_validate_json(receipt.model_dump_json())
         if receipt.specification_sha256 != spec.digest():
             raise ValueError("runtime stop receipt differs from launch")
         directory = receipt.output_directory
@@ -481,3 +482,48 @@ class DockerRuntime:
         if after["State"]["Running"] is not False:
             raise RuntimeError("owned runtime stop is not verified")
         await self._command(["docker", "container", "rm", receipt.container_id], directory, 30)
+
+    async def observe(
+        self, specification: RuntimeLaunchSpec, receipt: RuntimeReceipt, client: httpx.AsyncClient
+    ) -> RuntimeReceipt:
+        """Recheck the exact existing start and real HTTP path without creating or restarting it."""
+        spec = RuntimeLaunchSpec.model_validate_json(specification.model_dump_json())
+        receipt = RuntimeReceipt.model_validate_json(receipt.model_dump_json())
+        if (
+            receipt.specification_sha256 != spec.digest()
+            or receipt.output_directory.name != receipt.attempt_id
+        ):
+            raise ValueError("runtime observation receipt differs from frozen launch")
+        directory = await owned_disk(lambda: owned_directory(receipt.output_directory))
+        await owned_disk(lambda: freeze_file(directory / "specification.json", spec.canonical()))
+        await owned_disk(lambda: freeze_file(directory / "profile.json", spec.profile.canonical()))
+        start = self.monotonic()
+        deadline = start + min(30.0, spec.readiness_timeout_seconds)
+        before = await self._inspect(
+            receipt.container_id, spec, receipt.attempt_id, directory, deadline
+        )
+        if (
+            before["State"]["Running"] is not True
+            or before["State"]["StartedAt"] != receipt.container_started_at
+        ):
+            raise RuntimeError("recorded runtime start is no longer live")
+        if not await self.probe_endpoint(spec, client, directory, deadline=deadline):
+            raise RuntimeError("recorded runtime failed its actual HTTP probe")
+        after = await self._inspect(
+            receipt.container_id, spec, receipt.attempt_id, directory, deadline
+        )
+        if (
+            after["State"]["Running"] is not True
+            or after["State"]["StartedAt"] != receipt.container_started_at
+        ):
+            raise RuntimeError("recorded runtime changed during its HTTP probe")
+        self.remaining(deadline, 30)
+        return RuntimeReceipt(
+            specification_sha256=spec.digest(),
+            attempt_id=receipt.attempt_id,
+            container_id=receipt.container_id,
+            container_started_at=receipt.container_started_at,
+            observed_at=time.time(),
+            elapsed_seconds=self.monotonic() - start,
+            output_directory=directory,
+        )

@@ -13,10 +13,11 @@ import httpx
 import pytest
 
 from finserve.contracts.deployment import Revision
-from finserve.contracts.managed_runtime import RuntimeLaunchSpec
+from finserve.contracts.managed_runtime import RuntimeLaunchSpec, RuntimeReceipt
 from finserve.contracts.model_assets import ModelFetchSpec, SourceFile
 from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.http_ownership import HTTPClosureError
+from finserve.registry.artifacts import ArtifactRef, LocalArtifactStore
 from finserve.registry.engine_entrypoint import VLLMParameters
 from finserve.registry.managed_runtime import (
     DockerRuntime,
@@ -26,8 +27,17 @@ from finserve.registry.managed_runtime import (
     owned_directory,
     runtime_name,
 )
+from finserve.registry.metadata import Registry, RegistryConflict
 from finserve.registry.model_assets import verify_snapshot
+from finserve.registry.producer_stages import ProducerStages, StageState
+from finserve.registry.producer_tasks import ModelSnapshotReceipt, declare_input
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage, expected_labels
+from finserve.registry.runtime_stages import (
+    RuntimeStopReceipt,
+    launch_runtime_stage,
+    load_launch,
+    stop_runtime_stage,
+)
 
 
 def specification(tmp_path: Path) -> RuntimeLaunchSpec:
@@ -232,6 +242,340 @@ def handler(request: httpx.Request) -> httpx.Response:
             'data: {"choices":[],"usage":{"completion_tokens":1}}\n\ndata: [DONE]\n\n'
         ),
     )
+
+
+def upstream(journal: ProducerStages, spec: RuntimeLaunchSpec, tmp_path: Path) -> RuntimeLaunchSpec:
+    """Freeze actual tiny model bytes and synthetic image evidence without claiming a real build."""
+    root = tmp_path / "models"
+    root.mkdir()
+    directory = root / spec.model.digest()
+    spec.model_directory.rename(directory)
+    spec = RuntimeLaunchSpec.model_validate({**spec.model_dump(), "model_directory": directory})
+    manifest = journal.artifacts.put(verify_snapshot(directory, spec.model).canonical().encode())
+    declare_input(
+        journal,
+        "job:model",
+        {"model_root": str(root), "specification": json.loads(spec.model.canonical())},
+    )
+    state = journal.start("job:model")
+    assert state.attempt_id is not None
+    model = ModelSnapshotReceipt(
+        directory=directory, specification_sha256=spec.model.digest(), manifest=manifest
+    )
+    journal.finish(
+        "job:model", state.attempt_id, journal.artifacts.put(model.model_dump_json().encode())
+    )
+    declare_input(
+        journal,
+        "job:build",
+        {
+            "kind": "runtime-image-v1",
+            "model_stage_id": "job:model",
+            "model_manifest": manifest.model_dump(),
+            "specification": spec.image.specification.model_dump(mode="json"),
+        },
+    )
+    state = journal.start("job:build")
+    assert state.attempt_id is not None
+    journal.finish(
+        "job:build", state.attempt_id, journal.artifacts.put(spec.image.model_dump_json().encode())
+    )
+    return spec
+
+
+async def test_runtime_stages_reconcile_replay_and_stop(tmp_path: Path) -> None:
+    """A lost daemon response keeps its journal attempt and completed replay cannot recreate it."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        spec = upstream(journal, specification(tmp_path), tmp_path)
+        daemon = Daemon(spec)
+        daemon.fail_create = True
+        runtime = DockerRuntime(daemon)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(RuntimeError, match="response lost"):
+                await launch_runtime_stage(
+                    journal,
+                    "job:launch",
+                    "job:model",
+                    "job:build",
+                    spec,
+                    tmp_path / "work",
+                    client,
+                    runtime,
+                )
+            running = journal.state("job:launch")
+            assert running.status == "running"
+            receipt = await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                spec,
+                tmp_path / "work",
+                client,
+                runtime,
+            )
+            assert receipt.attempt_id == running.attempt_id
+            assert (
+                await launch_runtime_stage(
+                    journal,
+                    "job:launch",
+                    "job:model",
+                    "job:build",
+                    spec,
+                    tmp_path / "work",
+                    client,
+                    runtime,
+                )
+                == receipt
+            )
+            stopped = await stop_runtime_stage(journal, "job:stop", "job:launch", spec, runtime)
+            assert (
+                await stop_runtime_stage(journal, "job:stop", "job:launch", spec, runtime)
+                == stopped
+            )
+            with pytest.raises(AssertionError):
+                await launch_runtime_stage(
+                    journal,
+                    "job:launch",
+                    "job:model",
+                    "job:build",
+                    spec,
+                    tmp_path / "work",
+                    client,
+                    runtime,
+                )
+        assert sum(call[2] == "create" for call in daemon.calls) == 1
+        assert sum(call[2] == "start" for call in daemon.calls) == 1
+        assert journal.state("job:launch").attempt_number == 1
+        assert journal.state("job:stop").status == "completed"
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize(
+    "fault", ["model", "image", "build_input", "uncompleted", "changed_launch"]
+)
+async def test_runtime_stage_rejects_unbound_upstream(tmp_path: Path, fault: str) -> None:
+    """Stage linkage and actual model contents are checked before any Docker action."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        spec = upstream(journal, specification(tmp_path), tmp_path)
+        daemon = Daemon(spec)
+        build_id = "job:build"
+        if fault == "model":
+            (spec.model_directory / "config.json").write_bytes(b"tampered")
+        elif fault == "image":
+            spec = spec.model_copy(
+                update={"image": spec.image.model_copy(update={"source_archive_sha256": "9" * 64})}
+            )
+        elif fault in {"build_input", "uncompleted"}:
+            build_id = "job:other"
+            declare_input(journal, build_id, {})
+            if fault == "build_input":
+                state = journal.start(build_id)
+                assert state.attempt_id is not None
+                journal.finish(
+                    build_id,
+                    state.attempt_id,
+                    journal.artifacts.put(spec.image.model_dump_json().encode()),
+                )
+        else:
+            declare_input(journal, "job:launch", {"changed": True})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises((ValueError, RegistryConflict)):
+                await launch_runtime_stage(
+                    journal,
+                    "job:launch",
+                    "job:model",
+                    build_id,
+                    spec,
+                    tmp_path / "work",
+                    client,
+                    DockerRuntime(daemon),
+                )
+        assert daemon.calls == []
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize("fault", ["receipt", "before", "http", "during"])
+async def test_observe_never_restarts_unhealthy_runtime(tmp_path: Path, fault: str) -> None:
+    """Completed replay verifies the same start before and after HTTP and cannot repair it."""
+    spec = specification(tmp_path)
+    daemon = Daemon(spec)
+    runtime = DockerRuntime(daemon)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        receipt = await runtime.launch(spec, "a" * 32, tmp_path / "work", client)
+    assert daemon.container is not None
+    if fault == "receipt":
+        receipt = receipt.model_copy(update={"specification_sha256": "0" * 64})
+    elif fault == "before":
+        daemon.container["State"]["StartedAt"] = "different-start"
+
+    def changed(request: httpx.Request) -> httpx.Response:
+        """Fault only the observation phase after the initial successful launch."""
+        if fault == "during":
+            assert daemon.container is not None
+            daemon.container["State"]["StartedAt"] = "different-start"
+        return httpx.Response(503) if fault == "http" else handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(changed)) as client:
+        with pytest.raises((ValueError, RuntimeError)):
+            await runtime.observe(spec, receipt, client)
+    assert sum(call[2] == "start" for call in daemon.calls) == 1
+
+
+@pytest.mark.parametrize("different_start", [False, True])
+async def test_competing_runtime_observations_preserve_exact_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, different_start: bool
+) -> None:
+    """Concurrent completion may change its clock observation, but cannot substitute a start."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        spec = upstream(journal, specification(tmp_path), tmp_path)
+        original = journal.finish
+
+        def race(stage_id: str, attempt_id: str, output: ArtifactRef) -> StageState:
+            """Publish the other reconciler's immutable receipt immediately before this CAS."""
+            receipt = RuntimeReceipt.model_validate_json(journal.artifacts.get(output))
+            other = receipt.model_copy(
+                update={
+                    "observed_at": receipt.observed_at + 1,
+                    "container_started_at": "different-start"
+                    if different_start
+                    else receipt.container_started_at,
+                }
+            )
+            original(stage_id, attempt_id, journal.artifacts.put(other.model_dump_json().encode()))
+            raise RegistryConflict("competing completion")
+
+        monkeypatch.setattr(journal, "finish", race)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            action = launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                spec,
+                tmp_path / "work",
+                client,
+                DockerRuntime(Daemon(spec)),
+            )
+            if different_start:
+                with pytest.raises(RegistryConflict, match="identity changed"):
+                    await action
+            else:
+                receipt = await action
+                assert receipt == load_launch(journal, journal.state("job:launch"), spec)
+    finally:
+        registry.close()
+
+
+async def test_runtime_stage_receipts_require_matching_frozen_identity(tmp_path: Path) -> None:
+    """Even manually published journal output cannot stand in for a verified matching launch."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        spec = upstream(journal, specification(tmp_path), tmp_path)
+        planned = declare_input(journal, "job:planned", {})
+        with pytest.raises(ValueError, match="not completed"):
+            load_launch(journal, planned, spec)
+        runtime = DockerRuntime(Daemon(spec))
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            receipt = await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                spec,
+                tmp_path / "work",
+                client,
+                runtime,
+            )
+        state = journal.state("job:launch")
+        with pytest.raises(ValueError, match="differs from its stage"):
+            load_launch(journal, state, spec.model_copy(update={"memory_mib": 9000}))
+        assert state.output is not None
+        declare_input(
+            journal,
+            "job:stop",
+            {
+                "kind": "managed-runtime-stop-v1",
+                "launch_stage_id": "job:launch",
+                "launch": state.output.model_dump(),
+                "specification_sha256": spec.digest(),
+            },
+        )
+        running = journal.start("job:stop")
+        assert running.attempt_id is not None
+        wrong = RuntimeStopReceipt(
+            launch=state.output, container_id="0" * 64, observed_at=receipt.observed_at
+        )
+        journal.finish(
+            "job:stop", running.attempt_id, journal.artifacts.put(wrong.model_dump_json().encode())
+        )
+        with pytest.raises(ValueError, match="cleanup receipt identity"):
+            await stop_runtime_stage(journal, "job:stop", "job:launch", spec, runtime)
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize("stale", [False, True])
+async def test_competing_stop_completion_is_exactly_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stale: bool
+) -> None:
+    """A simultaneous verified cleanup shares completion; a superseded attempt cannot do so."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        spec = upstream(journal, specification(tmp_path), tmp_path)
+        runtime = DockerRuntime(Daemon(spec))
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                spec,
+                tmp_path / "work",
+                client,
+                runtime,
+            )
+        original = journal.finish
+
+        def race(stage_id: str, attempt_id: str, output: ArtifactRef) -> StageState:
+            """Interleave another completion or a superseding retry between read and CAS."""
+            if stale:
+                journal.fail(
+                    stage_id,
+                    attempt_id,
+                    "Reconciled",
+                    reconciliation=journal.artifacts.put(b"owned cleanup completed"),
+                )
+                journal.start(stage_id)
+            else:
+                other = RuntimeStopReceipt.model_validate_json(journal.artifacts.get(output))
+                other = other.model_copy(update={"observed_at": other.observed_at + 1})
+                original(
+                    stage_id, attempt_id, journal.artifacts.put(other.model_dump_json().encode())
+                )
+            raise RegistryConflict("competing stop")
+
+        monkeypatch.setattr(journal, "finish", race)
+        if stale:
+            with pytest.raises(RegistryConflict, match="cleanup attempt changed"):
+                await stop_runtime_stage(journal, "job:stop", "job:launch", spec, runtime)
+        else:
+            first = await stop_runtime_stage(journal, "job:stop", "job:launch", spec, runtime)
+            assert (
+                await stop_runtime_stage(journal, "job:stop", "job:launch", spec, runtime) == first
+            )
+    finally:
+        registry.close()
 
 
 async def test_managed_runtime_launch_reconcile_and_stop(tmp_path: Path) -> None:
