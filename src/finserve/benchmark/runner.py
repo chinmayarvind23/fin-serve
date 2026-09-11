@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import platform
@@ -9,11 +10,19 @@ import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    StrictInt,
+    model_serializer,
+    model_validator,
+)
 
 from finserve.benchmark.metrics import RequestRecord, summarize
 from finserve.benchmark.workload import WorkItem, Workload, default_workload
@@ -39,6 +48,58 @@ class RunConfig(BaseModel):
     image_digest: str = Field(default="undeclared", min_length=1)
     config_digest: str = Field(default="undeclared", min_length=1)
     cache_policy: str = "engine-default; warmup may populate caches"
+    request_api: Literal["completions", "chat"] = "completions"
+    system_prompt: str = Field(default="", max_length=16384)
+    chat_template_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def explicit_chat_mapping(self) -> "RunConfig":
+        """Chat is a separate frozen cohort; completion runs cannot hide unused template inputs."""
+        if self.request_api == "chat" and self.chat_template_sha256 is None:
+            raise ValueError("chat runs require the actual tokenizer template digest")
+        if self.request_api == "completions" and (self.system_prompt or self.chat_template_sha256):
+            raise ValueError("completion runs cannot declare chat-only mapping")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_completion_encoding(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """Keep historical completion configuration bytes stable through registry round-trips."""
+        result: dict[str, Any] = handler(self)
+        if self.request_api == "completions":
+            for key in ("request_api", "system_prompt", "chat_template_sha256"):
+                result.pop(key, None)
+        return result
+
+    def request_mapping_digest(self) -> str:
+        """Bind quality and performance to the same API, system instruction and chat template."""
+        mapping = {
+            "schema": "inference-request-mapping-v1",
+            "request_api": self.request_api,
+            "system_prompt": self.system_prompt,
+            "chat_template_sha256": self.chat_template_sha256,
+            "temperature": 0,
+        }
+        return hashlib.sha256(json.dumps(mapping, sort_keys=True).encode()).hexdigest()
+
+
+def request_payload(item: WorkItem, config: RunConfig) -> dict[str, object]:
+    """Performance and quality collectors share one versioned prompt-to-wire mapping."""
+    payload: dict[str, object] = {
+        "model": config.model,
+        "max_tokens": item.max_tokens,
+        "stream": True,
+        "temperature": 0,
+    }
+    if config.request_api == "chat":
+        messages = [{"role": "user", "content": item.prompt}]
+        if config.system_prompt:
+            messages.insert(0, {"role": "system", "content": config.system_prompt})
+        payload.update(messages=messages, stream_options={"include_usage": True})
+    else:
+        payload["prompt"] = item.prompt
+    return payload
 
 
 def benchmark_client(config: RunConfig) -> httpx.AsyncClient:
@@ -57,11 +118,18 @@ def benchmark_client(config: RunConfig) -> httpx.AsyncClient:
     )
 
 
+class ChatDelta(BaseModel):
+    """Role-only chat events do not establish first-content timing."""
+
+    content: str | None = None
+
+
 class Choice(BaseModel):
     """Only nonempty content establishes client first-content timing."""
 
     text: str = ""
     finish_reason: Literal["stop", "length", "content_filter"] | None = None
+    delta: ChatDelta | None = None
 
 
 class Usage(BaseModel):
@@ -97,6 +165,7 @@ class StreamState(BaseModel):
     server_ttft_s: float | None = None
     finished: bool = False
     maximum_tokens: int = 4096
+    request_api: Literal["completions", "chat"] = "completions"
 
     def consume(self, payload: str) -> None:
         """Parse complete SSE events; reject structured errors without dropping prior timing."""
@@ -108,7 +177,16 @@ class StreamState(BaseModel):
         event = StreamEvent.model_validate_json(payload)
         if event.error is not None:
             raise ValueError("server_stream_error")
-        content = "".join(choice.text for choice in event.choices)
+        if any(
+            (choice.text and self.request_api == "chat")
+            or (choice.delta is not None and self.request_api == "completions")
+            for choice in event.choices
+        ):
+            raise ValueError("response_api_differs_from_frozen_request")
+        content = "".join(
+            (choice.delta.content or "") if choice.delta is not None else choice.text
+            for choice in event.choices
+        )
         self.finished = self.finished or any(
             choice.finish_reason is not None for choice in event.choices
         )
@@ -174,20 +252,14 @@ async def request_one(
 ) -> RequestRecord:
     """The total deadline includes headers and body; HTTPX read timeouts alone are per chunk."""
     sent = time.perf_counter()
-    state = StreamState(maximum_tokens=item.max_tokens)
+    state = StreamState(maximum_tokens=item.max_tokens, request_api=config.request_api)
     error: str | None = None
     try:
         async with asyncio.timeout(config.timeout_s):
             async with client.stream(
                 "POST",
                 url,
-                json={
-                    "model": config.model,
-                    "prompt": item.prompt,
-                    "max_tokens": item.max_tokens,
-                    "stream": True,
-                    "temperature": 0,
-                },
+                json=request_payload(item, config),
                 timeout=config.timeout_s,
             ) as response:
                 state.status_code = response.status_code
@@ -500,6 +572,9 @@ def validate_comparison(baseline: Path, candidate: Path) -> None:
         "model",
         "model_revision",
         "tokenizer_revision",
+        "request_api",
+        "system_prompt",
+        "chat_template_sha256",
     ):
         if getattr(left.configuration, key) != getattr(right.configuration, key):
             raise ValueError(f"comparison differs in {key}")
@@ -529,6 +604,9 @@ def main() -> None:
     parser.add_argument("--engine-config", default="undeclared")
     parser.add_argument("--image-digest", default="undeclared")
     parser.add_argument("--config-digest", default="undeclared")
+    parser.add_argument("--request-api", choices=("completions", "chat"), default="completions")
+    parser.add_argument("--system-prompt", default="")
+    parser.add_argument("--chat-template-sha256")
     args = parser.parse_args()
     workload = (
         Workload.model_validate_json(args.workload.read_text())
@@ -551,6 +629,9 @@ def main() -> None:
         engine_config=args.engine_config,
         image_digest=args.image_digest,
         config_digest=args.config_digest,
+        request_api=args.request_api,
+        system_prompt=args.system_prompt,
+        chat_template_sha256=args.chat_template_sha256,
     )
 
     async def execute() -> None:

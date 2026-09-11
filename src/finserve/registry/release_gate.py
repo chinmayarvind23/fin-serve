@@ -94,8 +94,13 @@ def evaluate_gate(registry: Registry, artifacts: ArtifactStore, job_id: str) -> 
         profiles[1].verify_revision(specification.target)
         for bundle, profile in zip((baseline, candidate), profiles, strict=True):
             manifest = json.loads(artifacts.get(bundle.manifest))
+            suffix = (
+                "/chat/completions"
+                if manifest["configuration"].get("request_api", "completions") == "chat"
+                else "/completions"
+            )
             if (
-                manifest.get("url") != profile.base_url + "/completions"
+                manifest.get("url") != profile.base_url + suffix
                 or manifest["configuration"]["model"] != profile.served_model
             ):
                 raise ValueError("measured endpoint or served model differs from profile")

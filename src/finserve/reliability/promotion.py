@@ -4,8 +4,9 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 from finserve.benchmark.runner import ComparisonInput, validate_comparison, validate_evidence
 from finserve.contracts.deployment import ImmutableModel, Revision
@@ -35,6 +36,15 @@ class QualityEvidence(ImmutableModel):
     candidate_model_revision: str
     reference: dict[str, str]
     candidate: dict[str, str]
+    request_mapping_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_encoding(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Keep historical quality bytes stable; new chat evidence explicitly binds its mapping."""
+        result: dict[str, Any] = handler(self)
+        if self.request_mapping_sha256 is None:
+            result.pop("request_mapping_sha256", None)
+        return result
 
 
 class PerformanceSample(BaseModel):
@@ -125,6 +135,17 @@ def check_quality_identity(
     )
     if not all(checks):
         raise ValueError("quality identity mismatch")
+    if (
+        left.configuration.request_api == "chat"
+        or right.configuration.request_api == "chat"
+        or evidence.request_mapping_sha256 is not None
+    ):
+        if not (
+            evidence.request_mapping_sha256
+            == left.configuration.request_mapping_digest()
+            == right.configuration.request_mapping_digest()
+        ):
+            raise ValueError("quality request mapping differs from measured cohort")
 
 
 def verify_candidate_identity(candidate: ComparisonInput, revision: Revision) -> None:

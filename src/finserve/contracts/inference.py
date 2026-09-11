@@ -4,7 +4,7 @@ import json
 from typing import Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def request_id() -> str:
@@ -57,6 +57,21 @@ def reference_prompt(messages: list[ChatMessage]) -> str:
     return "\n".join(f"{message.role}: {message.content}" for message in messages)
 
 
+class ChatStreamOptions(BaseModel):
+    """Chat callers may explicitly request the authoritative usage already emitted by this API."""
+
+    model_config = ConfigDict(extra="forbid")
+    include_usage: Literal[True] = True
+
+    @field_validator("include_usage", mode="before")
+    @classmethod
+    def exact_true(cls, value: object) -> object:
+        """Reject numeric/string coercion and unsupported usage suppression."""
+        if value is not True:
+            raise ValueError("include_usage must be true")
+        return value
+
+
 class ChatRequest(BaseModel):
     """A small compatible chat surface avoids silently ignoring unsupported parameters."""
 
@@ -67,6 +82,7 @@ class ChatRequest(BaseModel):
     temperature: float = Field(default=0, ge=0, le=2)
     timeout_seconds: float = Field(default=30, gt=0, le=300)
     stream: bool = True
+    stream_options: ChatStreamOptions | None = None
 
     def to_inference(self) -> InferenceRequest:
         """Reference chat uses labeled text; production adapters use model chat templates."""
