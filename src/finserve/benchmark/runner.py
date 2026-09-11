@@ -25,6 +25,7 @@ from pydantic import (
 )
 
 from finserve.benchmark.metrics import RequestRecord, summarize
+from finserve.benchmark.request_mapping import chatml_roles
 from finserve.benchmark.workload import WorkItem, Workload, default_workload
 from finserve.http_ownership import HTTPClosureError, own_response
 
@@ -52,13 +53,16 @@ class RunConfig(BaseModel):
     request_api: Literal["completions", "chat"] = "completions"
     system_prompt: str = Field(default="", max_length=16384)
     chat_template_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    prompt_mapping: Literal["literal", "chatml_roles_v1"] = "literal"
 
     @model_validator(mode="after")
     def explicit_chat_mapping(self) -> "RunConfig":
         """Chat is a separate frozen cohort; completion runs cannot hide unused template inputs."""
         if self.request_api == "chat" and self.chat_template_sha256 is None:
             raise ValueError("chat runs require the actual tokenizer template digest")
-        if self.request_api == "completions" and (self.system_prompt or self.chat_template_sha256):
+        if self.request_api == "completions" and (
+            self.system_prompt or self.chat_template_sha256 or self.prompt_mapping != "literal"
+        ):
             raise ValueError("completion runs cannot declare chat-only mapping")
         return self
 
@@ -68,6 +72,8 @@ class RunConfig(BaseModel):
     ) -> dict[str, Any]:
         """Keep historical completion configuration bytes stable through registry round-trips."""
         result: dict[str, Any] = handler(self)
+        if self.prompt_mapping == "literal":
+            result.pop("prompt_mapping", None)
         if self.request_api == "completions":
             for key in ("request_api", "system_prompt", "chat_template_sha256"):
                 result.pop(key, None)
@@ -82,6 +88,8 @@ class RunConfig(BaseModel):
             "chat_template_sha256": self.chat_template_sha256,
             "temperature": 0,
         }
+        if self.prompt_mapping != "literal":
+            mapping["prompt_mapping"] = self.prompt_mapping
         return hashlib.sha256(json.dumps(mapping, sort_keys=True).encode()).hexdigest()
 
 
@@ -94,9 +102,12 @@ def request_payload(item: WorkItem, config: RunConfig) -> dict[str, object]:
         "temperature": 0,
     }
     if config.request_api == "chat":
-        messages = [{"role": "user", "content": item.prompt}]
-        if config.system_prompt:
-            messages.insert(0, {"role": "system", "content": config.system_prompt})
+        if config.prompt_mapping == "chatml_roles_v1":
+            messages = chatml_roles(item.prompt, config.system_prompt)
+        else:
+            messages = [{"role": "user", "content": item.prompt}]
+            if config.system_prompt:
+                messages.insert(0, {"role": "system", "content": config.system_prompt})
         payload.update(messages=messages, stream_options={"include_usage": True})
     else:
         payload["prompt"] = item.prompt
@@ -601,6 +612,7 @@ def validate_comparison(baseline: Path, candidate: Path) -> None:
         "request_api",
         "system_prompt",
         "chat_template_sha256",
+        "prompt_mapping",
     ):
         if getattr(left.configuration, key) != getattr(right.configuration, key):
             raise ValueError(f"comparison differs in {key}")
@@ -633,6 +645,9 @@ def main() -> None:
     parser.add_argument("--request-api", choices=("completions", "chat"), default="completions")
     parser.add_argument("--system-prompt", default="")
     parser.add_argument("--chat-template-sha256")
+    parser.add_argument(
+        "--prompt-mapping", choices=("literal", "chatml_roles_v1"), default="literal"
+    )
     args = parser.parse_args()
     workload = (
         Workload.model_validate_json(args.workload.read_text())
@@ -658,6 +673,7 @@ def main() -> None:
         request_api=args.request_api,
         system_prompt=args.system_prompt,
         chat_template_sha256=args.chat_template_sha256,
+        prompt_mapping=args.prompt_mapping,
     )
 
     async def execute() -> None:

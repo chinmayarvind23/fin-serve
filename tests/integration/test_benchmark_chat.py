@@ -135,6 +135,17 @@ async def test_chat_comparison_and_quality_bind_mapping(tmp_path: Path) -> None:
                 client, "http://test/v1/chat/completions", default_workload(), config(), output
             )
     validate_comparison(left, right)
+    mapped = tmp_path / "mapped"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+        await run_benchmark(
+            client,
+            "http://test/v1/chat/completions",
+            default_workload(),
+            config(prompt_mapping="chatml_roles_v1"),
+            mapped,
+        )
+    with pytest.raises(ValueError, match="prompt_mapping"):
+        validate_comparison(left, mapped)
     first, second = validate_evidence(left), validate_evidence(right)
     suite = default_suite()
     evidence = QualityEvidence(
