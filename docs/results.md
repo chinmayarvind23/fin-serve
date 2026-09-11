@@ -41,6 +41,26 @@ The plot consumes the recomputed audit; it does not replace raw-record verificat
 
 At concurrency 16, short 256-request development runs measured 40.29 requests/s without speculation versus 20.59 with three-token n-gram proposals. Candidate acceptance was 30.04% across its two recordings including warmup. p95 rose from 0.533 to 1.387 seconds. The unchanged correctness suite failed. The preferred profile keeps speculation disabled; the failed records are retained in `ngram-load-c16-01` and `quality-ngram-01`.
 
+## Rejected 1.5B image cohort
+
+`image-chat-15b-cohort-01` used verified Qwen2.5-1.5B-Instruct revision `989aa7980e4cf806f80c7fef2b1adb7bc71aa306`, model manifest `95334c7275d05bb8e71d1962d57e57a743c1b8aff95329cbb850b8ee5aaa370b`, and actual image `sha256:328f7cdadd2f494049560c12dc9f2a729473558807a1b3b49a971d6b5b11a568` built from source `d84c859cdda2caca616f1ca157d4a33e88d37f5f`. Both profiles used float16, eager execution, context/token limits 1,024, four engine sequences and memory fraction 0.45. Prefix caching alone changed from disabled to enabled. The native-chat mapping and generic format instruction were frozen before inference.
+
+The second resident worker could not allocate KV cache on the 8 GB GPU. That failed startup remains retained. A sequential fallback was declared before any quality or performance requests; it does not establish two warm 1.5B replicas or warm rollback.
+
+| Development quantity | Baseline | Prefix-cache candidate |
+| --- | ---: | ---: |
+| Measured successful requests | 128/128 | 128/128 |
+| Separate warmup requests | 16 | 16 |
+| Successful requests/s | 8.1765 | 11.2065 |
+| Generated tokens/s | 75.6324 | 103.6602 |
+| Median client TTFT | 536.62 ms | 375.30 ms |
+| Successful-request end-to-end p95 | 1.8421 s | 1.4212 s |
+| Mean physical GPU utilization | 33.78% | 42.17% |
+
+The development workload hash is `927f69f403f87f50502126aa5f7f2f0600c521cc7e7200a22be7173fc026845d`; run IDs are `5c6c62f2-3297-4395-8d4f-5f49938b8e68` and `adaac19b-35f9-4381-bf54-2ebe82bbdbf4`. Client concurrency was eight. These short sequential intervals cannot replace the sustained native comparison or establish a cloud cost estimate.
+
+Both models completed all 36 quality HTTP requests but scored 3/4 on the separately frozen format holdout and 10/32 on the unchanged release suite. Typed parity was 75%. Markdown-fenced JSON and exact numeric/yes-no formatting failures remained failures; outputs and graders were not normalized afterward. The actual canonical registration and lifecycle rejected the candidate for quality, with zero deployment callbacks. The planned sustained phase was not offered because its quality precondition failed. Raw quality responses, durable producer receipts, image/source identities and rejection state remain in the cohort directory.
+
 ## Multimodal evidence
 
 Pinned Qwen2-VL-2B-Instruct revision `895c3a49bc3fa70a340399125c650a463535e71c` runs through the actual image/text adapter. The final uniform-color preprocessing comparison retained 36 successful requests and 18/18 exact local/HTTP output pairs, but 0/36 correct color answers. The rejected semantic result remains in `vision-stage-run-03-final`; earlier fp16 and bf16 cohorts also remain.
