@@ -20,9 +20,13 @@ The source packages below are implemented. Runtime and acceptance limits are sep
 | `benchmark/{runner,experiment,metrics,gpu,cost}.py` | Raw request records, provenance, metric populations, GPU integration and explicit cost inputs |
 | `evaluation/quality.py` | Frozen exact/typed-JSON grading and separate correctness/parity metrics |
 | `registry/{metadata,artifacts,lifecycle,release_gate,pipeline}.py` | Immutable SQL/CAS state and recomputed release decisions |
+| `registry/{model_assets,runtime_build,engine_entrypoint}.py` | Frozen model download, committed-source image build and startup verification of actual mounted bytes |
+| `registry/{producer_stages,producer_tasks,quality_collection}.py` | Durable attempt ownership, verified stage receipts, unchanged-suite collection and raw-evidence reconstruction |
 | `registry/{annotations,explorer}.py` | Recomputed GPU/quality associations and bounded read-only GraphQL |
 | `reliability/{promotion,rollback,warm_routes}.py` | Performance/quality gates, rollback reconciliation and actual route CAS |
 | `telemetry/{metrics,tracing,propagation}.py` | Fixed-cardinality metrics, private trace propagation and sanitized JSONL/OTLP export |
+| `telemetry/langfuse_probe.py` | Bounded local ingestion and API verification of exact trace/span identity without prompt content |
+| `http_ownership.py` | One retained response-close task through repeated cancellation, with explicit unresolved cleanup failure |
 
 ## Stream accounting and ownership
 
@@ -46,6 +50,8 @@ Visual-job idempotency includes the normalized request and principal. The coordi
 
 Registry objects use immutable content hashes and database constraints. Identical retries succeed; conflicting identity reuse fails. Run registration validates manifest/request/summary consistency before publishing CAS references. Artifact reads verify namespace, size and SHA256. Quality annotation additionally verifies the installed grader source (only LF/CRLF normalization is accepted), the reference's embedded suite and answer linkage. GPU annotation reconstructs the exact measured clock window and rejects shifted epoch boundaries with an absolute tolerance.
 
+Producer stage identity includes canonical input and its local namespace. The SQL journal uses compare-and-swap versions and unique attempt tokens; a running attempt cannot restart merely because time elapsed. Completed model receipts rehash the local snapshot before use. Quality receipts reconstruct all raw rows and suite linkage before reuse. Canonicalization validates nested numeric defaults before hashing, so a JSON round trip cannot change an input's identity. Native disk writes and HTTP close tasks remain owned through cancellation. A failed local transport close preserves the offered request but leaves its stage running for reconciliation; it does not prove that remote GPU work stopped.
+
 A lifecycle specification names baseline/candidate runs, quality and suite references, expected route revision/generation and target Revision. Canonical mode requires both serving profiles. Profile digest includes engine version/parameters, pinned model/tokenizer manifests, served model, endpoint and the name of a credential environment variable; it never contains the credential value. Image identity remains in Revision to avoid a hashing cycle.
 
 Warm routes are separate active traffic truth. Every cutover compares the expected revision and generation, records a stable action fingerprint, and commits the new route plus action receipt atomically. A request pins one snapshot. Lifecycle state versions count persisted transitions; they are not deployment route generations.
@@ -62,4 +68,4 @@ GPU utilization integrates sample-held physical-device observations over a decla
 
 The quality grader distinguishes agreement with a reference from correctness against expected answers. A pair of identical wrong answers can have high parity. Missing/invalid structured outputs and exact-format failures remain explicit, and a bad result does not justify editing the frozen suite afterward.
 
-Trace context attaches only during generator execution, never across a consumer yield. Private Ray RPC arguments carry bounded W3C identity; the gateway starts a fresh root. Exporter configuration, queue/response bounds and native shutdown limitations are documented in [observability](observability.md). Actual CPU Ray actors and HTTP fixtures verify the causal parent chain; vLLM kernel spans and hosted ingestion remain separate work.
+Trace context attaches only during generator execution, never across a consumer yield. Private Ray RPC arguments carry bounded W3C identity; the gateway starts a fresh root. Exporter configuration, queue/response bounds and native shutdown limitations are documented in [observability](observability.md). Actual CPU Ray actors and HTTP fixtures verify the causal parent chain. A pinned local Langfuse stack accepted and returned exact trace/span IDs with null prompt/output fields. The six-process fixture experiment retained all 6,144 successful requests but did not identify an isolated tracing penalty. vLLM kernel spans and cloud ingestion remain separate work.

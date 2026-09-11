@@ -32,7 +32,7 @@ A visual-generation job uses a different asynchronous API. SQLite persists accep
 | Immutable run/output artifacts | Local content-addressed store; S3 adapter | Real S3 access still requires authenticated deployment validation |
 | Warm active traffic route | Separate SQLite store with CAS generations | Current local controller is not a distributed consensus database |
 | Experiment tracking | MLflow adapter and local SDK execution | Remote hosting and service integration require deployment checks |
-| Observations | Raw requests, GPU samples, sampled OTel spans, Prometheus metrics | Actual text Ray/HTTP trace propagation is verified; hosted ingestion remains pending |
+| Observations | Raw requests, GPU samples, sampled OTel spans, Prometheus metrics | Local Langfuse ingestion/query and Prometheus/Grafana alert recovery are verified; cloud hosting remains pending |
 
 Artifacts are immutable; SQL refers to their digest, length and namespace. A native run may explicitly omit a deployment image. A canonical release profile additionally binds model/tokenizer manifests, engine parameters and endpoint identity, while its Revision binds the actual image digest. Historical native results are never relabeled with an image built later.
 
@@ -40,10 +40,12 @@ Artifacts are immutable; SQL refers to their digest, length and namespace. A nat
 
 The shared gate materializes verified baseline/candidate evidence, recomputes performance and quality, verifies revision/profile identity, and persists either approval or rejection. Airflow and CLI use the same gate. A job freezes its required gate mode before profile publication so a crash cannot downgrade a canonical release into a legacy drill.
 
+Producer stages precede that decision. A model stage downloads a frozen file manifest and verifies its bytes; an image stage binds those files to committed source; a quality stage records every offered response against an unchanged suite. Each stage publishes immutable artifact references through a durable attempt journal. A completed receipt can be replayed after verification. Interrupted work requires evidence that its owned resources have drained before retry; an ambiguous Docker build or failed HTTP close stays unresolved. Completing collection does not approve a release.
+
 The warm deployment adapter changes route truth with an expected revision and generation. Existing requests retain their pinned backend; new requests read the new route. Rollback is healthy only after a real inference probe observes the expected revision and the active generation remains unchanged. This operation switches running endpoints; it does not imply a bounded cold image pull, model load or node recovery.
 
 ## Infrastructure and current limits
 
 The AWS foundation specifies private EKS networking, bounded CPU/GPU node groups, RDS, Redis, S3, ECR and workload identities. Helm separates CPU Ray proxies from GPU engine Deployments. Local configuration and mocked provider checks pass; authenticated AWS/Hugging Face deployment remains incomplete. A Docker image and a Terraform plan are not proof of a running cloud service.
 
-Local experiments include a real Ray-to-GPU path, 6,144 measured text requests, pretrained image/text inference, actual gRPC reference jobs and an HTTP warm rollback drill. Multi-engine scaling, hosted observability, artifact-bound end-to-end deployment and the recorded browser demo are still being completed. [Results](results.md) states which measured gains failed the quality gate.
+Local experiments include a real Ray-to-GPU path, 6,144 measured text requests, pretrained image/text inference, actual gRPC reference jobs and an HTTP warm rollback drill. The first two-engine routing session failed availability under load; bounded admission waiting is implemented and awaits a corrected GPU run. Artifact-bound end-to-end deployment, cloud hosting and the recorded browser demo are still being completed. [Results](results.md) states which measured gains failed the quality gate.
