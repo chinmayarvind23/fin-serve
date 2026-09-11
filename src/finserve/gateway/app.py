@@ -23,6 +23,7 @@ from finserve.engines.base import Engine
 from finserve.engines.fixture import FixtureEngine
 from finserve.gateway.admission import Admission
 from finserve.gateway.body_limit import BodyLimit
+from finserve.multimodal.jobs import VisualJobCoordinator, VisualJobStore
 from finserve.telemetry.metrics import Metrics
 from finserve.telemetry.tracing import JsonSpanExporter, TraceRuntime
 
@@ -288,8 +289,11 @@ def create_app(
     tracing: TraceRuntime | None = None,
     revision: str = "unrecorded",
     rate_limiter: RateLimiter | None = None,
+    visual_jobs: VisualJobCoordinator | None = None,
 ) -> FastAPI:
     """Tests inject engines; deployments select an explicit backend through the factory."""
+    if visual_jobs is not None and not api_key:
+        raise ValueError("visual job serving requires an API credential")
     serving = Serving(
         engine or FixtureEngine(),
         Admission(max_concurrency),
@@ -304,21 +308,31 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         """Close pooled clients when shutdown completes; Uvicorn handles request draining."""
         try:
+            if visual_jobs is not None:
+                visual_jobs.start()
             yield
         finally:
             try:
-                await serving.engine.close()
+                if visual_jobs is not None:
+                    await visual_jobs.close()
             finally:
                 try:
-                    if rate_limiter is not None:
-                        await rate_limiter.close()
+                    await serving.engine.close()
                 finally:
-                    if tracing is not None:
-                        await asyncio.to_thread(tracing.close)
+                    try:
+                        if rate_limiter is not None:
+                            await rate_limiter.close()
+                    finally:
+                        if tracing is not None:
+                            await asyncio.to_thread(tracing.close)
 
     app = FastAPI(title="FinServe", version="0.1.0", lifespan=lifespan)
     app.add_middleware(BodyLimit)
     app.state.serving = serving
+    if visual_jobs is not None and api_key is not None:
+        from finserve.gateway.visual_routes import register_visual_routes
+
+        register_visual_routes(app, visual_jobs, api_key)
 
     @app.get("/healthz")
     async def health() -> dict[str, str]:
@@ -371,6 +385,14 @@ def from_env() -> FastAPI:
     else:
         raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
     trace_path = os.getenv("FINSERVE_TRACE_PATH")
+    visual_jobs = None
+    if visual_target := os.getenv("FINSERVE_VISUAL_GRPC_TARGET"):
+        from finserve.multimodal.visual_rpc import VisualRPCClient
+
+        visual_jobs = VisualJobCoordinator(
+            VisualJobStore(Path(os.environ["FINSERVE_VISUAL_DB"])),
+            VisualRPCClient(visual_target, os.environ["FINSERVE_VISUAL_SERVICE_KEY"]),
+        )
     rate_limiter = None
     if redis_url := os.getenv("FINSERVE_REDIS_URL"):
         from finserve.cache.redis_state import from_url
@@ -397,4 +419,5 @@ def from_env() -> FastAPI:
         tracing=tracing,
         revision=os.getenv("FINSERVE_REVISION", "unrecorded"),
         rate_limiter=rate_limiter,
+        visual_jobs=visual_jobs,
     )

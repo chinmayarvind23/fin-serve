@@ -23,9 +23,12 @@ function authenticated(header: string | null, key: string): boolean {
 /** Only versioned inference/job endpoints are exposed; admin and caller-selected destinations stay private. */
 function permitted(method: string, path: string): boolean {
   return (
+    (method === "GET" && path === "/v1/visual/models") ||
     (method === "POST" &&
       ["/v1/completions", "/v1/chat/completions", "/v1/visual/jobs"].includes(path)) ||
-    (["GET", "DELETE"].includes(method) && /^\/v1\/visual\/jobs\/[A-Za-z0-9_-]{1,128}$/.test(path))
+    (["GET", "DELETE"].includes(method) &&
+      /^\/v1\/visual\/jobs\/[A-Za-z0-9_-]{1,128}$/.test(path)) ||
+    (method === "GET" && /^\/v1\/visual\/jobs\/[A-Za-z0-9_-]{1,128}\/artifact$/.test(path))
   );
 }
 
