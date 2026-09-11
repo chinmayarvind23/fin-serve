@@ -1,0 +1,91 @@
+{{- if or (ne .Release.Namespace "kube-system") (ne .Release.Name "finserve-cluster-autoscaler") }}
+{{- fail "Install only as finserve-cluster-autoscaler in kube-system; the IRSA subject and lock identity are fixed." }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finserve-cluster-autoscaler
+  namespace: kube-system
+  annotations:
+    eks.amazonaws.com/role-arn: {{ printf "arn:aws:iam::%s:role/%s-node-autoscaler" .Values.awsAccountId .Values.clusterName | quote }}
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+# Kubernetes token is needed for scheduling observation and the leader lock.
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finserve-cluster-autoscaler
+  namespace: kube-system
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: finserve-cluster-autoscaler}
+  template:
+    metadata:
+      labels: {app: finserve-cluster-autoscaler}
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      serviceAccountName: finserve-cluster-autoscaler
+      nodeSelector: {finserve.io/pool: cpu}
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: cluster-autoscaler
+          # Official v1.35.2 multi-platform index, verified against registry response bytes.
+          image: registry.k8s.io/autoscaling/cluster-autoscaler@sha256:aac369dc283927a623deb1af54696efcc722ae79255aa07788422e495bab887d
+          imagePullPolicy: IfNotPresent
+          command: ["/cluster-autoscaler"]
+          args:
+            - --cloud-provider=aws
+            - --v=2
+            - --namespace=kube-system
+            - --leader-elect=true
+            - --leader-elect-resource-lock=leases
+            - --leader-elect-resource-name=finserve-cluster-autoscaler
+            - --status-config-map-name=finserve-cluster-autoscaler-status
+            - {{ printf "--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/%s" .Values.clusterName | quote }}
+            - --max-nodes-total=4
+            - --expander=least-waste
+            - --scale-down-delay-after-add=10m
+            - --scale-down-unneeded-time=10m
+            - --max-scale-down-parallelism=1
+            - --max-drain-parallelism=1
+            - --skip-nodes-with-local-storage=true
+            - --skip-nodes-with-system-pods=true
+            - --skip-nodes-with-custom-controller-pods=true
+            - --enable-provisioning-requests=false
+            - --capacity-buffer-controller-enabled=false
+            - --capacity-buffer-pod-injection-enabled=false
+            - --address=:8085
+          env:
+            - {name: AWS_REGION, value: {{ .Values.awsRegion | quote }} }
+            - {name: AWS_DEFAULT_REGION, value: {{ .Values.awsRegion | quote }} }
+            # Missing IRSA must not fall back to the node's instance role.
+            - {name: AWS_EC2_METADATA_DISABLED, value: "true"}
+          resources:
+            requests: {cpu: 100m, memory: 600Mi}
+            limits: {cpu: 500m, memory: 600Mi}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports: [{name: metrics, containerPort: 8085}]
+          startupProbe:
+            httpGet: {path: /health-check, port: metrics}
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /health-check, port: metrics}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health-check, port: metrics}
+            periodSeconds: 30
+            failureThreshold: 3

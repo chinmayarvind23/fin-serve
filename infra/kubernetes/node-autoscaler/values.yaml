@@ -1,0 +1,4 @@
+# Match the Terraform foundation. No deployable identity defaults are supplied.
+clusterName: ""
+awsAccountId: ""
+awsRegion: ""

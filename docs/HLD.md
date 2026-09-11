@@ -67,3 +67,8 @@ The Kubernetes chart offers opt-in KubeRay V2 scaling between one and two CPU wo
 ## Node scaling foundation
 
 The AWS foundation now separates node desired-size ownership from Terraform configuration. CPU nodes are bounded at two to three; GPU nodes at zero to one in the first configured AZ, matching retained zonal model storage. Terraform initializes desired sizes and continues to own bounds, while subsequent desired-size changes belong to a controller or explicit EKS operations. Opt-in node autoscaling creates scoped IRSA and discovery metadata on actual managed ASGs. It does not install Cluster Autoscaler, scale model replicas, or establish live capacity evidence. The separate controller and pending-Pod/drain tests remain required.
+
+
+## Node controller deployment stage
+
+The separate node-autoscaler Helm chart binds Cluster Autoscaler 1.35.2 to the foundation's dedicated IRSA role and discovery tags. It observes scheduling demand and changes node desired counts within existing bounds. The chart preserves fixed model and Serve replica ownership; it does not equate traffic idleness with a drained engine. Image bytes are pinned, inputs cannot override flags or permissions, and twelve render checks plus an actual offline binary flag check pass. Kubernetes admission, AWS identity, GPU volume mounts and live scale/drain cycles remain unverified.

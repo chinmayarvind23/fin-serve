@@ -1,6 +1,7 @@
 # Kubernetes stages
 
-Install `operators/` before `workload/`. The pinned operator chart includes KubeRay
+Install `operators/` before `workload/`. The optional [node controller](node-autoscaler/README.md)
+is a separate kube-system installation after its Terraform IAM/tag setup. The pinned operator chart includes KubeRay
 1.6.1 and NVIDIA device plugin 0.20.0. The plugin uses `nvidia.com/gpu` integer resources;
 do not install NVIDIA DRA on the same nodes. Use the AL2023 NVIDIA AMI selected by the
 foundation and confirm device allocation before serving.

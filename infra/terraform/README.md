@@ -60,7 +60,8 @@ Install the [Kubernetes stages](../kubernetes/README.md) only after foundation r
 
 `enable_node_autoscaling=true` creates a dedicated IRSA role and applies discovery
 tags to the actual EKS-managed Auto Scaling Groups. It does not install or start
-Cluster Autoscaler. The role trusts only
+Cluster Autoscaler. Install the separately verified [controller chart](../kubernetes/node-autoscaler/README.md)
+after applying and inspecting the foundation. The role trusts only
 `system:serviceaccount:kube-system:finserve-cluster-autoscaler` with the STS
 audience. Its scaling writes require both exact managed ASG name patterns and
 this cluster's two discovery tags; it cannot change node-group bounds or tag new
@@ -88,7 +89,8 @@ data. Review desired-size ownership and the new CPU maximum before applying.
 
 Mocked plans verify scope, bounds and metadata. Live controller discovery, pending
 Pod scheduling, drain and scale cycles remain unverified. The controller chart and
-deployment are separate work. The design follows the
+deployment are separate work; the [controller chart](../kubernetes/node-autoscaler/README.md)
+is available for that stage. The design follows the
 [AWS Cluster Autoscaler guidance](https://docs.aws.amazon.com/eks/latest/best-practices/cas.html)
 and [zonal storage constraints](https://docs.aws.amazon.com/eks/latest/eksctl/autoscaling.html).
 The [model storage stage](../kubernetes/storage/README.md) defines an encrypted

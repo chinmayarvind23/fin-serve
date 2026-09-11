@@ -312,3 +312,141 @@ def test_model_storage_preserves_weights_and_waits_for_consumer_topology() -> No
     assert claim["metadata"]["namespace"] == "finserve"
     assert claim["spec"]["accessModes"] == ["ReadWriteOnce"]
     assert claim["spec"]["resources"]["requests"]["storage"] == "20Gi"
+
+
+def render_node_autoscaler(
+    tmp_path: Path,
+    values: dict[str, Any],
+    namespace: str = "kube-system",
+    release: str = "finserve-cluster-autoscaler",
+    version: str = "1.35.0",
+) -> subprocess.CompletedProcess[str]:
+    """Render the node controller without credentials or Kubernetes API discovery."""
+    chart = Path(__file__).resolve().parents[2] / "infra/kubernetes/node-autoscaler"
+    parameters = tmp_path / "node-values.json"
+    parameters.write_text(json.dumps(values))
+    return subprocess.run(
+        [
+            helm_binary(),
+            "template",
+            release,
+            str(chart),
+            "--namespace",
+            namespace,
+            "--kube-version",
+            version,
+            "-f",
+            str(parameters),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def node_autoscaler_values() -> dict[str, Any]:
+    """Synthetic account identity is only a render fixture and has no credentials."""
+    return {
+        "clusterName": "finserve-staging",
+        "awsAccountId": "123456789012",
+        "awsRegion": "us-east-1",
+    }
+
+
+def test_node_controller_identity_capacity_and_permissions(tmp_path: Path) -> None:
+    """Controller identity, lock names and fixed flags must agree with its scoped foundation."""
+    yaml = pytest.importorskip("yaml")
+    result = render_node_autoscaler(tmp_path, node_autoscaler_values())
+    assert result.returncode == 0, result.stderr
+    docs = {item["kind"]: item for item in yaml.safe_load_all(result.stdout)}
+    account = docs["ServiceAccount"]
+    assert account["automountServiceAccountToken"] is True
+    assert account["metadata"]["annotations"]["eks.amazonaws.com/role-arn"] == (
+        "arn:aws:iam::123456789012:role/finserve-staging-node-autoscaler"
+    )
+    deployment = docs["Deployment"]["spec"]
+    assert deployment["replicas"] == 1 and deployment["strategy"]["type"] == "Recreate"
+    pod = deployment["template"]["spec"]
+    assert pod["serviceAccountName"] == "finserve-cluster-autoscaler"
+    assert pod["nodeSelector"] == {"finserve.io/pool": "cpu"}
+    assert "volumes" not in pod
+    runtime = pod["containers"][0]
+    assert runtime["command"] == ["/cluster-autoscaler"]
+    assert runtime["image"] == (
+        "registry.k8s.io/autoscaling/cluster-autoscaler@sha256:"
+        "aac369dc283927a623deb1af54696efcc722ae79255aa07788422e495bab887d"
+    )
+    flags = dict(argument[2:].split("=", 1) for argument in runtime["args"])
+    assert flags["max-nodes-total"] == "4"
+    assert flags["node-group-auto-discovery"] == (
+        "asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/finserve-staging"
+    )
+    assert flags["max-drain-parallelism"] == flags["max-scale-down-parallelism"] == "1"
+    assert (
+        flags["skip-nodes-with-local-storage"]
+        == flags["skip-nodes-with-custom-controller-pods"]
+        == "true"
+    )
+    assert runtime["resources"]["requests"] == {"cpu": "100m", "memory": "600Mi"}
+    env = {entry["name"]: entry["value"] for entry in runtime["env"]}
+    assert env == {
+        "AWS_REGION": "us-east-1",
+        "AWS_DEFAULT_REGION": "us-east-1",
+        "AWS_EC2_METADATA_DISABLED": "true",
+    }
+    assert runtime["securityContext"]["readOnlyRootFilesystem"]
+    rules = docs["Role"]["rules"]
+    restricted = {rule["resources"][0]: rule for rule in rules if "resourceNames" in rule}
+    assert restricted["leases"]["resourceNames"] == [flags["leader-elect-resource-name"]]
+    assert restricted["configmaps"]["resourceNames"] == [flags["status-config-map-name"]]
+    assert all("resourceNames" not in rule for rule in rules if "create" in rule["verbs"])
+    cluster_rules = docs["ClusterRole"]["rules"]
+    assert all("*" not in rule["verbs"] + rule["resources"] for rule in cluster_rules)
+    assert not any("secrets" in rule["resources"] for rule in cluster_rules)
+    dra = next(rule for rule in cluster_rules if rule["apiGroups"] == ["resource.k8s.io"])
+    assert set(dra["resources"]) == {"resourceslices", "deviceclasses", "resourceclaims"}
+    assert set(dra["verbs"]) == {"get", "list", "watch"}
+    for kind in ("RoleBinding", "ClusterRoleBinding"):
+        assert docs[kind]["subjects"] == [
+            {
+                "kind": "ServiceAccount",
+                "name": account["metadata"]["name"],
+                "namespace": "kube-system",
+            }
+        ]
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {},
+        {"awsAccountId": "wrong"},
+        {"clusterName": "bad,name"},
+        {"awsRegion": "us-east-1 --evil"},
+        {"extraArgs": {"max-nodes-total": "100"}},
+        {"image": "unreviewed:latest"},
+        {"replicas": 10},
+    ],
+)
+def test_node_controller_values_fail_closed(tmp_path: Path, override: dict[str, Any]) -> None:
+    """Unknown overrides cannot expand controller images, credentials, flags or capacity."""
+    values = node_autoscaler_values() | override if override else {}
+    result = render_node_autoscaler(tmp_path, values)
+    assert result.returncode != 0 and "schema" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "namespace,release,version",
+    [
+        ("default", "finserve-cluster-autoscaler", "1.35.0"),
+        ("kube-system", "second-controller", "1.35.0"),
+        ("kube-system", "finserve-cluster-autoscaler", "1.34.0"),
+        ("kube-system", "finserve-cluster-autoscaler", "1.36.0"),
+    ],
+)
+def test_node_controller_rejects_wrong_cluster_contract(
+    tmp_path: Path, namespace: str, release: str, version: str
+) -> None:
+    """IRSA/leader identity and the Kubernetes minor cannot drift at installation."""
+    result = render_node_autoscaler(tmp_path, node_autoscaler_values(), namespace, release, version)
+    assert result.returncode != 0

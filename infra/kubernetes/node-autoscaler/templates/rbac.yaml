@@ -1,0 +1,73 @@
+# Scheduling observation spans namespaces; mutable lock/status objects stay in kube-system.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: finserve-cluster-autoscaler}
+rules:
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [pods/status]
+    verbs: [update]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, watch, update]
+  - apiGroups: [""]
+    resources: [namespaces, pods, services, replicationcontrollers, persistentvolumeclaims, persistentvolumes, configmaps]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, patch]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses, csinodes, csidrivers, csistoragecapacities, volumeattachments]
+    verbs: [get, list, watch]
+  # CA 1.35 has DRA observation enabled even though FinServe uses integer device-plugin GPUs.
+  - apiGroups: [resource.k8s.io]
+    resources: [resourceslices, deviceclasses, resourceclaims]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: finserve-cluster-autoscaler, namespace: kube-system}
+rules:
+  # Kubernetes cannot restrict create by resourceName; existing objects are name-restricted.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [finserve-cluster-autoscaler]
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [finserve-cluster-autoscaler-status]
+    verbs: [get, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: finserve-cluster-autoscaler}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: finserve-cluster-autoscaler}
+subjects:
+  - {kind: ServiceAccount, name: finserve-cluster-autoscaler, namespace: kube-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: finserve-cluster-autoscaler, namespace: kube-system}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: finserve-cluster-autoscaler}
+subjects:
+  - {kind: ServiceAccount, name: finserve-cluster-autoscaler, namespace: kube-system}
