@@ -15,6 +15,8 @@ from pydantic import Field, model_validator
 from finserve.contracts.deployment import HealthObservation, ImmutableModel, Revision
 from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.engines.openai_adapter import CompletionState, sse_events
+from finserve.http_ownership import HTTPClosureError, own_response
+from finserve.registry.model_assets import owned_disk
 from finserve.reliability.rollback import ApplyRequest, ControlConflict
 
 
@@ -284,7 +286,7 @@ class WarmRouteAdapter:
 
     async def apply(self, request: ApplyRequest) -> None:
         """Offload SQLite work; cancellation can be reconciled with the same action key."""
-        await asyncio.to_thread(self.store.apply, request)
+        await owned_disk(lambda: self.store.apply(request))
 
     async def health(self, deployment_id: str) -> HealthObservation:
         """One deadline covers route reads, HTTP smoke and the final generation fence."""
@@ -293,8 +295,8 @@ class WarmRouteAdapter:
 
     async def _health(self, deployment_id: str) -> HealthObservation:
         """Reject failed SSE and route races before claiming that configured traffic is healthy."""
-        before = await asyncio.to_thread(self.store.snapshot, deployment_id)
-        backend = await asyncio.to_thread(self.store.backend, before.revision_id)
+        before = await owned_disk(lambda: self.store.snapshot(deployment_id))
+        backend = await owned_disk(lambda: self.store.backend(before.revision_id))
         valid = False
         try:
             async with asyncio.timeout(self.timeout_seconds):
@@ -311,6 +313,7 @@ class WarmRouteAdapter:
                     },
                     follow_redirects=False,
                 ) as response:
+                    own_response(response)
                     media_type = response.headers.get("content-type", "").split(";", 1)[0]
                     if (
                         response.status_code != 200
@@ -337,7 +340,9 @@ class WarmRouteAdapter:
                         and response.headers.get("x-finserve-route-generation")
                         == str(before.generation)
                     )
-            valid = valid and await asyncio.to_thread(self.store.snapshot, deployment_id) == before
+            valid = valid and await owned_disk(lambda: self.store.snapshot(deployment_id)) == before
+        except HTTPClosureError:
+            raise
         except Exception:
             valid = False
         return HealthObservation(
