@@ -42,6 +42,7 @@ class BackendServer(ThreadingHTTPServer):
         self.marker = marker
         self.model = MODEL
         self.health_delay = 0.0
+        self.metrics_valid = True
         self.lock = threading.Lock()
         self.active = 0
         self.completed = 0
@@ -66,7 +67,22 @@ class BackendHandler(BaseHTTPRequestHandler):
         """Advertise a mutable model ID so exact-model health rejection can be tested live."""
         backend = cast(BackendServer, self.server)
         time.sleep(backend.health_delay)
-        body = json.dumps({"data": [{"id": backend.model}]}).encode()
+        if self.path == "/metrics":
+            body = (
+                "".join(
+                    f'# TYPE vllm:{name} gauge\n'
+                    f'vllm:{name}{{model_name="{backend.model}"}} {value}\n'
+                    for name, value in (
+                        ("num_requests_running", backend.active),
+                        ("num_requests_waiting", 0),
+                        ("kv_cache_usage_perc", 0.125),
+                    )
+                ).encode()
+                if backend.metrics_valid
+                else b"missing gauges"
+            )
+        else:
+            body = json.dumps({"data": [{"id": backend.model}]}).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -376,3 +392,45 @@ async def test_live_http_auth_and_body_validation_before_routing(runtime: Runtim
             assert sum(frame["token"]["generated_tokens"] for frame in frames) == 2
     finally:
         await asyncio.to_thread(serve.delete, "authenticated-router")
+
+
+async def test_real_http_engine_metrics_and_missing_observation_quarantine(
+    runtime: Runtime,
+) -> None:
+    """Real socket gauges drive readiness; model discovery alone cannot hide failed telemetry."""
+    handle = await asyncio.to_thread(
+        runtime.serve.run,
+        build_application(
+            {
+                "model": MODEL,
+                "backends": {
+                    "observed-a": runtime.backends[0].endpoint,
+                    "observed-b": runtime.backends[1].endpoint,
+                },
+                "observe_engine_metrics": True,
+                "capacity_per_worker": 4,
+            }
+        ),
+        name="metrics-pair",
+        route_prefix=None,
+    )
+    try:
+        status = await handle.status.remote()
+        assert status["physical_gpu_observation"] is None
+        assert all(
+            row["healthy"] and row["kv_cache_utilization"] == 0.125 for row in status["workers"]
+        )
+        runtime.backends[0].metrics_valid = False
+        await asyncio.sleep(1.05)
+        request = InferenceRequest(model=MODEL, prompt="gauges", max_tokens=2)
+        stream = handle.options(stream=True).generate.remote(request.model_dump())
+        frames = [frame async for frame in stream]
+        assert frames and all(frame["replica_id"] == "observed-b" for frame in frames)
+        status = await handle.status.remote()
+        assert status["active_reservations"] == 0
+        assert not next(row for row in status["workers"] if row["replica_id"] == "observed-a")[
+            "healthy"
+        ]
+    finally:
+        runtime.backends[0].metrics_valid = True
+        await asyncio.to_thread(runtime.serve.delete, "metrics-pair")

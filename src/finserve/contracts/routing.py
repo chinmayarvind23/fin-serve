@@ -24,7 +24,13 @@ class ReplicaSnapshot(BaseModel):
     ongoing_requests: int = Field(default=0, ge=0, strict=True)
     queued_requests: int = Field(default=0, ge=0, strict=True)
     gpu_type: Identifier | None = None
-    gpu_memory_utilization: float = Field(default=0, ge=0, le=1)
+    gpu_device_id: Identifier | None = None
+    gpu_memory_utilization: float | None = Field(default=None, ge=0, le=1)
+    gpu_observed_at: float | None = Field(default=None, ge=0)
+    engine_running_requests: int | None = Field(default=None, ge=0, le=65536, strict=True)
+    engine_waiting_requests: int | None = Field(default=None, ge=0, le=65536, strict=True)
+    kv_cache_utilization: float | None = Field(default=None, ge=0, le=1)
+    engine_observed_at: float | None = Field(default=None, ge=0)
     cached_prefixes: frozenset[PrefixDigest] = Field(default_factory=frozenset, max_length=128)
     reflected_lease_ids: frozenset[Identifier] = Field(default_factory=frozenset, max_length=4096)
 

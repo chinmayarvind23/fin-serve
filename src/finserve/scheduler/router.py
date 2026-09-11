@@ -96,6 +96,12 @@ class ReplicaRouter:
             self._replica_leases[lease.decision.replica_id].remove(lease.lease_id)
 
     @property
+    def snapshots(self) -> tuple[ReplicaSnapshot, ...]:
+        """Expose immutable evidence without granting access to mutable reservation state."""
+        with self._lock:
+            return tuple(self._snapshots.values())
+
+    @property
     def active_reservations(self) -> int:
         """Expose outstanding ownership for shutdown and cancellation verification."""
         with self._lock:

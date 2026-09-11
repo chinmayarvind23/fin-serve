@@ -43,13 +43,22 @@ def is_eligible(
     matches_gpu = (not request.requires_gpu or snapshot.gpu_type is not None) and (
         request.gpu_type is None or request.gpu_type == snapshot.gpu_type
     )
-    memory_safe = (
-        snapshot.gpu_type is None or snapshot.gpu_memory_utilization < policy.gpu_memory_limit
+    memory_safe = snapshot.gpu_type is None or (
+        snapshot.gpu_memory_utilization is not None
+        and snapshot.gpu_memory_utilization < policy.gpu_memory_limit
+        and (
+            snapshot.gpu_observed_at is None
+            or 0 <= now - snapshot.gpu_observed_at <= policy.snapshot_ttl_seconds
+        )
     )
     return (
         snapshot.healthy
         and snapshot.model == request.model
         and 0 <= age <= policy.snapshot_ttl_seconds
+        and (
+            snapshot.engine_observed_at is None
+            or 0 <= now - snapshot.engine_observed_at <= policy.snapshot_ttl_seconds
+        )
         and available
         and matches_gpu
         and memory_safe
@@ -72,7 +81,9 @@ def score_candidate(
     )
     score = candidate.load
     if policy.mode == "adaptive":
-        memory = candidate.snapshot.gpu_memory_utilization if candidate.snapshot.gpu_type else 0
+        memory = candidate.snapshot.gpu_memory_utilization or 0
+        if candidate.snapshot.gpu_type is None:
+            memory = 0
         score += policy.memory_weight * memory - (policy.cache_bonus if affinity else 0)
     return RoutingDecision(
         replica_id=candidate.snapshot.replica_id,

@@ -10,6 +10,7 @@ import json
 import os
 import secrets
 import time
+from collections import deque
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from typing import Any, Literal, Self, cast
@@ -20,10 +21,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from finserve.contracts.inference import EngineToken, InferenceRequest
+from finserve.engines.backend_observations import (
+    EngineObservation,
+    SharedGpuSampler,
+    parse_engine_metrics,
+)
 from finserve.engines.openai_adapter import OpenAICompletionEngine
 from finserve.engines.ray_serve import FixtureReplica, OwnedFixtureResponse, RoutedFixture
 from finserve.scheduler.policy import RoutingPolicy
-from finserve.scheduler.router import ReplicaRouter
+from finserve.scheduler.router import ReplicaRouter, RoutingLease
 
 
 class BackendConfiguration(BaseModel):
@@ -34,11 +40,15 @@ class BackendConfiguration(BaseModel):
     backends: dict[str, str] = Field(min_length=1, max_length=8)
     capacity_per_worker: int = Field(default=16, ge=1, le=128, strict=True)
     mode: Literal["least_load", "adaptive"] = "least_load"
+    observe_engine_metrics: bool = False
+    shared_gpu_uuid: str | None = Field(default=None, min_length=1, max_length=256)
 
     @model_validator(mode="after")
     def validate_endpoints(self) -> Self:
         """Reject duplicate canonical endpoints that would double-count one configured worker."""
         normalized: set[str] = set()
+        if self.shared_gpu_uuid is not None and not self.observe_engine_metrics:
+            raise ValueError("physical GPU routing requires backend engine observations")
         for name, address in self.backends.items():
             if not name or len(name) > 63 or not all(c.isalnum() or c in "-_" for c in name):
                 raise ValueError("invalid backend name")
@@ -59,12 +69,22 @@ class BackendConfiguration(BaseModel):
 class OpenAIEngineReplica(FixtureReplica):
     """Reuse fenced lease ownership while the external process performs real model inference."""
 
-    def __init__(self, replica_id: str, capacity: int, model: str, base_url: str) -> None:
+    def __init__(
+        self,
+        replica_id: str,
+        capacity: int,
+        model: str,
+        base_url: str,
+        observe_engine_metrics: bool = False,
+    ) -> None:
         """Resolve the engine credential from the trusted worker environment."""
         super().__init__(replica_id, capacity, 0)
         self.model = model
         self.engine = OpenAICompletionEngine(base_url, api_key=os.getenv("FINSERVE_ENGINE_API_KEY"))
         self.health_url = base_url.rstrip("/") + "/models"
+        self.metrics_url = str(httpx.URL(base_url).copy_with(path="/metrics"))
+        self.observe_engine_metrics = observe_engine_metrics
+        self._observation: EngineObservation | None = None
         headers: dict[str, str] = {}
         if key := os.getenv("FINSERVE_ENGINE_API_KEY"):
             headers["Authorization"] = f"Bearer {key}"
@@ -95,19 +115,50 @@ class OpenAIEngineReplica(FixtureReplica):
         document = json.loads(body)
         return any(row.get("id") == self.model for row in document["data"])
 
+    async def _probe_metrics(self) -> EngineObservation:
+        """Use bounded current vLLM gauges; deployments with other metric schemas opt out."""
+        async with asyncio.timeout(1):
+            async with self.probe.stream("GET", self.metrics_url) as response:
+                response.raise_for_status()
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(body) + len(chunk) > 262144:
+                        raise ValueError("engine metrics exceed byte limit")
+                    body.extend(chunk)
+        return parse_engine_metrics(bytes(body), self.model)
+
     async def state(self) -> dict[str, Any]:
         """Cache discovery for at most one second; acknowledged request counts remain current."""
         if self._close_task is not None:
             return super().snapshot() | {"healthy": False}
         async with self._health_lock:
             if self._checked_at is None or time.monotonic() - self._checked_at >= 1:
+                self._checked_at = time.monotonic()
                 try:
-                    self._healthy = await self._probe_health()
+                    if self.observe_engine_metrics:
+                        async with asyncio.TaskGroup() as group:
+                            health = group.create_task(self._probe_health())
+                            metrics = group.create_task(self._probe_metrics())
+                        self._healthy, self._observation = health.result(), metrics.result()
+                    else:
+                        self._healthy = await self._probe_health()
                 except Exception:
                     self._healthy = False
-                self._checked_at = time.monotonic()
+                    self._observation = None
         result = super().snapshot()
         result["healthy"] = self._healthy
+        if self._observation is not None:
+            observed = self._observation
+            # Proxy ownership and backend counts overlap; summing would double-count our calls.
+            # External direct calls affect load, but cannot share our lease fence. The engine's
+            # compute cap remains authoritative; proxy capacity assumes exclusive routed traffic.
+            result["ongoing_requests"] = max(len(self.active), observed.running + observed.waiting)
+            result.update(
+                engine_running_requests=observed.running,
+                engine_waiting_requests=observed.waiting,
+                kv_cache_utilization=observed.kv_cache_utilization,
+                engine_observation_age_seconds=time.monotonic() - self._checked_at,
+            )
         return result
 
     async def close(self) -> None:
@@ -145,12 +196,72 @@ class RoutedBackends(RoutedFixture):
     """A single routing authority addresses one named proxy actor per distinct external backend."""
 
     def __init__(
-        self, handles: dict[str, Any], model: str, mode: Literal["least_load", "adaptive"]
+        self,
+        handles: dict[str, Any],
+        model: str,
+        mode: Literal["least_load", "adaptive"],
+        shared_gpu_uuid: str | None = None,
     ) -> None:
         """One actor owns routing reservations; external engines scale separately."""
         self.handles, self.model = handles, model
         self.router = ReplicaRouter(RoutingPolicy(mode=mode))
         self._api_key = os.getenv("FINSERVE_RAY_API_KEY")
+        self.shared_gpu_uuid = shared_gpu_uuid
+        self._gpu_sampler = SharedGpuSampler() if shared_gpu_uuid is not None else None
+        self._disabled: set[str] = set()
+        self._decisions: deque[dict[str, Any]] = deque(maxlen=256)
+
+    def set_enabled(self, replica_id: str, enabled: bool) -> None:
+        """Trusted handle control quarantines before owned engine drain; it never revokes leases."""
+        if replica_id not in self.handles or type(enabled) is not bool:
+            raise ValueError("unknown backend or invalid enabled flag")
+        if enabled:
+            self._disabled.discard(replica_id)
+        else:
+            self._disabled.add(replica_id)
+            for snapshot in self.router.snapshots:
+                if snapshot.replica_id == replica_id:
+                    self.router.update_snapshot(
+                        snapshot.model_copy(
+                            update={
+                                "healthy": False,
+                                "received_at": time.monotonic(),
+                            }
+                        )
+                    )
+
+    def record_selection(self, request: InferenceRequest, lease: RoutingLease) -> None:
+        """Retain bounded request IDs and actual policy inputs without prompts or credentials."""
+        self._decisions.append(
+            {
+                "request_id": request.request_id,
+                "epoch_s": time.time(),
+                "decision": lease.decision.model_dump(),
+                "snapshots": [
+                    snapshot.model_dump(mode="json") for snapshot in self.router.snapshots
+                ],
+            }
+        )
+
+    async def refresh_snapshots(self) -> None:
+        """Attach one shared-device sample per refresh, preventing invented per-engine VRAM."""
+        fields: dict[str, object] = {}
+        if self._gpu_sampler is not None and self.shared_gpu_uuid is not None:
+            observation = await self._gpu_sampler.get()
+            fields = observation.snapshot_fields(self.shared_gpu_uuid)
+        await asyncio.gather(
+            *(
+                self._refresh_one(
+                    name, handle, fields | ({"healthy": False} if name in self._disabled else {})
+                )
+                for name, handle in self.handles.items()
+            )
+        )
+
+    async def close(self) -> None:
+        """Drain only router-owned native sampling; engine process ownership stays external."""
+        if self._gpu_sampler is not None:
+            await self._gpu_sampler.close()
 
     async def __call__(self, request: Request) -> Response:
         """Bound the optional HTTP ingress before creating any lease or contacting an engine."""
@@ -184,16 +295,36 @@ class RoutedBackends(RoutedFixture):
 
     async def read_snapshot(self, handle: Any) -> dict[str, Any]:
         """The engine heartbeat adds model discovery to current local lease counts."""
-        return cast(dict[str, Any], await handle.state.remote())
+        data = dict(cast(dict[str, Any], await handle.state.remote()))
+        if data.get("replica_id") in self._disabled:
+            data["healthy"] = False
+        return data
 
     async def status(self) -> dict[str, Any]:
         """Report actual HTTP proxy occupancy without inventing remote GPU measurements."""
         workers = await asyncio.gather(*(handle.state.remote() for handle in self.handles.values()))
+        physical: dict[str, object] | None = None
+        if self._gpu_sampler is not None:
+            observation = await self._gpu_sampler.get()
+            physical = observation.sample.model_dump()
+            physical["router_observed_at"] = observation.started_at
+            physical["configured_shared_uuid"] = self.shared_gpu_uuid
         return {
             "active_reservations": self.router.active_reservations,
             "workers": workers,
+            "physical_gpu_observation": physical,
+            "disabled_backends": sorted(self._disabled),
+            "recent_decisions": list(self._decisions),
             "scope": "CPU proxy leases; GPU resources belong to external engines",
         }
+
+
+class ServeRoutedBackends(RoutedBackends):
+    """Keep Ray's awaited destructor limited to the actor lifecycle boundary."""
+
+    async def __del__(self) -> None:
+        """Graceful actor deletion drains the router-owned collector thread before exit."""
+        await self.close()
 
 
 def build_application(args: dict[str, Any]) -> Any:
@@ -209,7 +340,11 @@ def build_application(args: dict[str, Any]) -> Any:
             max_queued_requests=128,
             ray_actor_options={"num_cpus": 0.1, "num_gpus": 0},
         )(ServeOpenAIEngineReplica).bind(
-            name, configuration.capacity_per_worker, configuration.model, endpoint
+            name,
+            configuration.capacity_per_worker,
+            configuration.model,
+            endpoint,
+            configuration.observe_engine_metrics,
         )
         for name, endpoint in configuration.backends.items()
     }
@@ -219,4 +354,6 @@ def build_application(args: dict[str, Any]) -> Any:
         max_ongoing_requests=128,
         max_queued_requests=128,
         ray_actor_options={"num_cpus": 0.1, "num_gpus": 0},
-    )(RoutedBackends).bind(workers, configuration.model, configuration.mode)
+    )(ServeRoutedBackends).bind(
+        workers, configuration.model, configuration.mode, configuration.shared_gpu_uuid
+    )

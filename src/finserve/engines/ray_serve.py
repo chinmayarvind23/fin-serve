@@ -102,13 +102,26 @@ class RoutedFixture:
         self.model = "fixture"
         self.router = ReplicaRouter(RoutingPolicy(mode=mode))
 
-    async def _refresh_one(self, replica_id: str, handle: Any) -> None:
+    async def _refresh_one(
+        self, replica_id: str, handle: Any, shared_fields: dict[str, object] | None = None
+    ) -> None:
         """Bound heartbeat latency and quarantine workers without a current snapshot."""
         try:
+            started = time.monotonic()
             async with asyncio.timeout(2):
                 data = await self.read_snapshot(handle)
+            if data.get("replica_id") != replica_id:
+                raise ValueError("worker snapshot identity mismatch")
             data.pop("completed", None)
             data.pop("cancelled", None)
+            if "engine_observation_age_seconds" in data:
+                age = data.pop("engine_observation_age_seconds")
+                if not isinstance(age, (float, int)) or age < 0:
+                    raise ValueError("invalid engine observation age")
+                # Subtract the whole RPC interval conservatively; remote clocks are incomparable.
+                data["engine_observed_at"] = started - age
+            if shared_fields:
+                data.update(shared_fields)
             data["received_at"] = time.monotonic()
             self.router.update_snapshot(ReplicaSnapshot.model_validate(data))
         except Exception:
@@ -122,9 +135,18 @@ class RoutedFixture:
                 )
             )
 
+    async def refresh_snapshots(self) -> None:
+        """A hook allows production routing to attach one common physical observation per round."""
+        await asyncio.gather(
+            *(self._refresh_one(name, handle) for name, handle in self.handles.items())
+        )
+
     async def read_snapshot(self, handle: Any) -> dict[str, Any]:
         """Keep the public heartbeat call replaceable for engine-backed workers."""
         return cast(dict[str, Any], await handle.snapshot.remote())
+
+    def record_selection(self, request: InferenceRequest, lease: RoutingLease) -> None:
+        """Production observers may retain bounded prompt-free evidence after atomic reservation."""
 
     async def _release_after_worker(
         self, lease: RoutingLease, admission: asyncio.Future[Any], result: Any
@@ -149,18 +171,14 @@ class RoutedFixture:
         request = InferenceRequest.model_validate(payload)
         deadline = time.monotonic() + request.timeout_seconds
         await asyncio.wait_for(
-            asyncio.gather(
-                *(
-                    self._refresh_one(replica_id, handle)
-                    for replica_id, handle in self.handles.items()
-                )
-            ),
+            self.refresh_snapshots(),
             timeout=max(0, deadline - time.monotonic()),
         )
         lease = self.router.reserve(RoutingRequest(model=request.model))
         admission: asyncio.Future[Any] | None = None
         result: Any = None
         try:
+            self.record_selection(request, lease)
             worker = self.handles[lease.decision.replica_id]
             handle = worker.options(stream=True)
             admission = cast(

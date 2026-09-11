@@ -46,6 +46,11 @@ def test_least_load_has_deterministic_ties_and_normalized_capacity() -> None:
         {"ongoing_requests": 4},
         {"queued_requests": 4},
         {"gpu_type": "test-gpu", "gpu_memory_utilization": 0.95},
+        {"gpu_type": "test-gpu"},
+        {"gpu_type": "test-gpu", "gpu_memory_utilization": 0.5, "gpu_observed_at": 4},
+        {"gpu_type": "test-gpu", "gpu_memory_utilization": 0.5, "gpu_observed_at": 11},
+        {"engine_observed_at": 4},
+        {"engine_observed_at": 11},
     ],
 )
 def test_ineligible_snapshots_never_receive_work(changes: dict[str, object]) -> None:
@@ -61,7 +66,7 @@ def test_gpu_requirement_and_type_are_hard_constraints() -> None:
     """A healthy CPU or wrong accelerator cannot serve a GPU-specific request."""
     router = ReplicaRouter()
     router.update_snapshot(snapshot("cpu"))
-    router.update_snapshot(snapshot("gpu", gpu_type="gpu-a"))
+    router.update_snapshot(snapshot("gpu", gpu_type="gpu-a", gpu_memory_utilization=0.5))
     request = RoutingRequest(model="fixture", requires_gpu=True, gpu_type="gpu-a")
     assert router.reserve(request, now=10).decision.replica_id == "gpu"
     with pytest.raises(NoReplicaAvailable):
@@ -88,6 +93,30 @@ def test_adaptive_memory_penalty_and_bounded_affinity() -> None:
         ).decision.replica_id
         == "b"
     )
+
+
+def test_shared_gpu_without_prefix_cache_preserves_least_load_ordering() -> None:
+    """A common physical-memory penalty cannot create an adaptive gain between colocated engines."""
+    selections: list[list[str]] = []
+    for mode in ("least_load", "adaptive"):
+        router = ReplicaRouter(RoutingPolicy(mode=mode))
+        for name in ("a", "b"):
+            router.update_snapshot(
+                snapshot(
+                    name,
+                    gpu_type="RTX4070",
+                    gpu_device_id="GPU-one",
+                    gpu_memory_utilization=0.78,
+                    gpu_observed_at=10,
+                )
+            )
+        selections.append(
+            [
+                router.reserve(RoutingRequest(model="fixture"), now=10).decision.replica_id
+                for _ in range(8)
+            ]
+        )
+    assert selections[0] == selections[1] == ["a", "b"] * 4
 
 
 def test_reflected_leases_are_not_double_counted_and_stale_release_is_conservative() -> None:
