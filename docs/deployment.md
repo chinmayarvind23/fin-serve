@@ -1,29 +1,25 @@
-# Deployment
+﻿# Deployment
 
-## Environments
+The repository has tested local services and validated AWS/Kubernetes configuration. Authenticated AWS/Hugging Face deployment is still pending. No public endpoint, billed GPU cost or cloud rollback result is claimed.
 
-Local -> staging GPU -> production-shaped benchmark.
+## Local runtime
 
-Production-shaped means realistic infrastructure/operations for exercising the design, not real customer traffic.
+The [Compose stack](../infra/docker/README.md) runs FastAPI and ephemeral Redis, with an optional Prometheus/Grafana override. Its default engine is a transport fixture. GPU engines, Ray, the gRPC visual worker, registry and Bun services have separate processes and explicit credentials.
 
-## Local
+The runtime producer fetches a pinned model snapshot, verifies each file, builds from an exact Git archive and records the resulting image identities. Its entrypoint rechecks the mounted model and canonical profile before engine startup. Native experiments completed before this producer keep their original undeclared image fields.
 
-Docker Compose, FastAPI, Redis, Postgres, one small/local engine, Prometheus/Grafana.
+## AWS and Kubernetes
 
-## AWS
+The [Terraform foundation](../infra/terraform/README.md) describes private EKS networking, bounded CPU/GPU groups, RDS, Redis, S3, ECR and workload identities. The [Kubernetes stages](../infra/kubernetes/README.md) install KubeRay/device-plugin operators before Ray and GPU engine workloads. The current chart serves one external GPU engine through CPU Ray proxies; extra proxies are not extra model capacity.
 
-Terraform provisions VPC/subnets/security, EKS, GPU node groups, RDS, S3, Redis/ElastiCache if used, IAM, observability, and ingress prerequisites.
+Provider mocks and Helm/CRD validation verify configuration contracts. Deployment still requires a valid account session, private-cluster connectivity, region-specific image/add-on resolution, application secrets, storage, TLS ingress and actual service checks. Keep Terraform state, plans and credentials outside the source checkout.
 
-KubeRay manages Ray clusters/services. Keep CPU/system and GPU node groups separate.
+The staging foundation uses a single NAT gateway, single-AZ RDS, one Redis node and a GPU group bounded to one node. These are explicit resource constraints, not high-availability guarantees. The existing GPU Deployment uses Recreate and cannot provide an overlapping warm canary on that single GPU allocation.
 
-## Autoscaling
+## Release and rollback
 
-Tune Serve replicas, Ray worker Pods, and EKS GPU nodes independently. Maintain warm GPU capacity when cold start violates interactive SLOs.
+The shared release gate verifies immutable identities and recomputes quality/performance before approval. A failed quality gate blocks promotion even when throughput improves. Airflow and CLI call the same implementation.
 
-## Rollout
+The implemented warm-route controller switches already-running endpoints with expected revision/generation checks. In-flight requests retain their original backend. Readiness requires a successful inference stream and exact revision verification after cutover. The local fixture drill measured 0.680 seconds from detection to verified recovery; it excludes image pulls, weight loads and node replacement. A separate cold/cloud experiment is required to assess the 94-second target.
 
-`candidate -> separate revision/canary -> readiness -> smoke -> quality -> controlled load -> promote`
-
-## Rollback
-
-Restore last known-good immutable revision. Measure `healthy_at - regression_detected_at`to happen within 94 seconds.
+Replica scaling, engine process capacity and GPU node scaling require separate evidence. Multi-engine capacity experiments and the artifact-bound end-to-end lifecycle are in progress. Current [results](results.md) identify the scope of completed checks.

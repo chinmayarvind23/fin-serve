@@ -1,79 +1,54 @@
-# Benchmark Methodology
+# Benchmark methodology
 
-## Rules
+FinServe keeps tuning cohorts, frozen comparisons and functional probes separate. Freeze workload bytes, grader, reference answers and serving configuration before a comparison. Preserve every attempted run, including startup failures, timeouts and rejected optimizations. A faster candidate is accepted only when the declared performance and quality gates both pass.
 
-1. Freeze workload manifest before headline comparison.
-2. Record baseline before tuning.
-3. Use the same quality rules.
-4. Exclude warmup consistently.
-5. Preserve failed/timed-out requests.
-6. Never count dropped requests as successful throughput.
-7. Record hardware/software versions.
-8. Repeat runs and keep raw records.
-9. Separate policy-tuning workloads from final workloads.
-10. Publish failed optimizations and regressions.
+## Populations and clocks
 
-## Workloads
+A logical inference request counts once; SSE chunks do not count as requests or generated tokens. The engine's final usage is authoritative. The serving adapters reject missing usage or malformed termination. The independent load client can record transport completion with unknown usage; that request cannot support a known token-throughput result. Incomplete termination and malformed output remain failures.
 
-- W1 interactive short: short prompt, short/medium output.
-- W2 decode-heavy: short prompt, long output.
-- W3 prefill-heavy: long prompt, short output.
-- W4 frozen mixed production-like distribution for headline comparison.
-- W5 repeated-prefix for cache/routing.
-- W6 failure/adversarial: excess input, timeout, cancellation, burst overload, malformed input, engine/node failure.
-- W7 multimodal: size/resolution/output buckets.
+Warmup records are retained separately. The measured interval begins before measured requests are scheduled and ends after their completion or failure. Successful-request throughput is successful measured requests divided by that whole interval. Generated-token throughput sums authoritative output tokens from successful measured requests over the same interval. Failed requests remain in raw records and the attempted-request denominator for success rate.
 
-## 6,000+ request rule
+Client TTFT measures client send to first nonempty visible content. Server TTFT measures server receipt to first visible content on the server clock. They are reported separately; no timestamp subtraction crosses hosts. End-to-end p95 uses successful client send-to-complete durations. In open-loop mode, scheduled-to-complete delay additionally captures waiting before client send. Closed-loop mode fixes concurrency; its configured arrival-rate field is unused.
 
-Count real logical requests across declared configurations. Streaming chunks are not requests.
+## Reproducible comparison
 
-## Arrival modes
+Both configurations must use the same frozen workload hash, measured/warmup counts, concurrency, arrival mode/rate, timeout, hardware and model/tokenizer revisions. Record source revision, engine version and arguments, cache/speculation settings and actual image/configuration identities. A native process can declare its image unknown. A later build cannot supply that identity retroactively.
 
-Closed-loop concurrency and open-loop arrivals are both supported and explicitly labeled because they answer different queueing questions.
+Change one serving mechanism at a time. Use a separate workload for tuning. Repeated randomized ordering is preferable for a performance claim; label an ordered single pair and its workstation/thermal confounds when that is the evidence available. The [recorded results](results.md) include one such eager/compiled pair with 6,144 measured requests. They do not establish a production availability guarantee.
 
-## Timestamps
+The committed `benchmarks/configs/text-release-v1.json` contains 64 cases across SEC question answering, tables, earnings and general text, with varied context and output budgets. Repetition supplies the declared sustained request count. It is an explicit synthetic financial workload, not captured customer traffic.
 
-Record client send, server received, route, engine admit, prefill if available, first token, last token, client complete.
+## Quality, GPU and cost
 
-## Metrics
+The separate `evals/golden/correctness-32-v1.json` suite has 32 exact/typed-JSON cases. Correctness compares candidate output with expected answers; parity compares it with the frozen reference output. Equal wrong answers can have high parity. Invalid JSON and exact-format mismatches remain failures. The grader is versioned and its source identity is checked during evidence import.
 
-`TTFT = first_token - server_received`
+GPU utilization integrates timestamped physical-device samples across the measured epoch interval. Stale gaps are capped and coverage is published. Below 95% coverage, mean utilization is unknown. Shared-GPU processes do not create extra devices. Per-engine running/waiting counts and KV-cache occupancy are different measurements.
 
-`E2E = client_complete - client_send`
+Cost per million generated tokens requires explicit price and billed or modelled time:
 
-`token_throughput = sum(generated_tokens) / measured_seconds`
+`cost_per_million = total_declared_cost * 1_000_000 / authoritative_generated_tokens`.
 
-`success_rate = successful_requests / accepted_requests`
+Report billing scope, idle time, other infrastructure and quality equivalence. Workstation throughput alone cannot establish cloud cost savings.
 
-`gpu_cost_per_1m = sum(instance_hour_cost * instance_hours) * 1_000_000 / generated_tokens`
+## Actual artifact layout
 
-Quality parity has a versioned formula matching the selected task. Do not invent a generic 99.2% formula after seeing results.
-
-## Ablations
+Evidence is written to a new external directory, such as `resources/fin_serve/evidence/<experiment>/`:
 
 ```text
-B0 reference/simple server
-B1 vLLM default
-B2 batching/engine tuning
-B3 cache-aware routing
-B4 speculative decoding
-B5 Ray Serve distributed routing
-B6 autoscaling/heterogeneous placement
-B7 multimodal stage experiment where applicable
-```
-
-This prevents attributing the whole gain to the last technology added.
-
-## Artifact layout
-
-```text
-benchmarks/results/<run_id>/
+experiment/
+  environment.json
+  experiment-status.json
+  gpu.jsonl
+  gpu-summary.json
+  run/
+    manifest.json
+    requests.jsonl
+    summary.json
+quality/
   manifest.json
-  requests.parquet
-  gpu_metrics.parquet
-  service_metrics.json
-  eval_results.json
-  cost.json
-  summary.json
-  notes.md
+  requests.jsonl
+  answers.json
+  quality.json
 ```
+
+Quality filenames are defined by `scripts/run_quality.py`; retain its complete output directory. Additional startup logs, package inventories, frozen profiles and independent audit reports accompany the relevant experiment. [Commands](commands.md) covers the actual CLI. The evidence explorer verifies and imports these artifacts; its UI never changes their recorded measurements or authorizes deployment.

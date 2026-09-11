@@ -5,7 +5,7 @@ The Bun website compares registered serving runs through a read-only GraphQL ser
 Install `uv sync --extra explorer` and `bun install --frozen-lockfile`. The initial service supports a local SQLite registry and a `LocalArtifactStore` outside this repository. Import a completed experiment with the same immutable native identities used during measurement:
 
 ```sh
-python -m finserve.registry.annotations \
+uv run --no-sync python -m finserve.registry.annotations \
   --database-url sqlite:////absolute/private/evidence.db \
   --artifact-root /absolute/private/artifacts \
   --experiment /absolute/private/experiment \

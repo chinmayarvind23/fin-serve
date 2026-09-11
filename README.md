@@ -1,168 +1,92 @@
-# FinServe
+﻿# FinServe
 
-FinServe is a distributed text and multimodal inference platform built to study the engineering tradeoffs that determine production model-serving performance: request scheduling, continuous batching, KV-cache efficiency, speculative decoding, GPU placement, multimodal stage separation, autoscaling, quality regression, observability, and rollback.
+FinServe is a text and image inference platform with a reproducible measurement and release-control path. It connects a Bun edge, FastAPI, separately managed GPU engines, Ray routing and durable visual jobs. An evidence explorer puts throughput, latency, failed quality checks and exact artifact identities in the same view.
 
-## Development status
+A faster server can still return incorrect answers or lose work during cancellation. FinServe measures completed requests and engine-reported tokens, retains failures, and blocks promotion when its quality or identity checks fail.
 
-The repository is being implemented in measured slices. Typed contracts, bounded admission,
-streaming ingress, and a deterministic transport fixture are implemented. The remaining
-architecture below describes the intended platform until its runtime checks are recorded.
+## Measured results
 
-Run the current local API with Python 3.12+ and uv:
+A native RTX 4070 Laptop experiment compared eager and compiled vLLM 0.29.0 with pinned Qwen2.5-0.5B-Instruct weights. Each configuration retained 3,072 measured requests and 64 separate warmup requests against the same frozen workload at concurrency 16.
 
-```bash
+| Measurement | Eager baseline | Compiled candidate |
+| --- | ---: | ---: |
+| Successful requests/s | 12.99 | 34.59 |
+| Generated tokens/s | 373.52 | 987.54 |
+| Median server TTFT | 105.30 ms | 128.57 ms |
+| End-to-end p95 | 2.131 s | 0.804 s |
+| Completed requests | 3,072/3,072 | 3,072/3,072 |
+| Time-weighted GPU utilization | 29.11% | 57.91% |
+
+Token throughput increased **2.64×**, while median TTFT worsened. Exact output agreement across the paired load requests was **80.70%**. A separate frozen 32-case exact/typed-JSON suite scored **31.25% correctness** and **75% baseline parity**, so the candidate **failed the quality gate**. These are native workstation observations with undeclared deployment images, one ordered pair and no cloud billing evidence. They do not establish production availability or GPU cost savings.
+
+[Results and limitations](docs/results.md) identify the retained evidence, rejected speculation experiment and multimodal checks. The original 94 requests/s, 99.2% parity, 81% utilization and 37% cost-reduction figures remain targets.
+
+## Current capabilities
+
+- **Text serving:** bounded HTTP/SSE admission, cancellation ownership, authoritative token accounting, vLLM/SGLang adapters and an inspectable PyTorch reference decoder. The reference decoder has random weights and is not a quality model.
+- **Distributed routing:** a real Ray HTTP bridge to separately managed engine processes, endpoint eligibility, bounded leases and policy selection. Multiple proxy replicas do not imply multiple GPUs.
+- **Image plus text:** authenticated single-PNG requests through a pretrained vision model, strict image validation and an actual local-versus-HTTP preprocessing experiment. Three counterfactual chart probes passed; the retained uniform-color suite failed.
+- **Visual generation jobs:** a JAX/Flax reference generator behind gRPC, SQLite job ownership, idempotent submission, fenced cancellation and verified PNG artifacts. This is a reference generator, not a pretrained image-generation product.
+- **Release evidence:** immutable SQL metadata, local/S3 artifact adapters, MLflow integration, a shared canonical-profile gate for CLI/Airflow and warm route rollback with exact revision checks.
+- **Evidence explorer:** read-only GraphQL, paired run metrics, workload slices, quality failures, GPU coverage and request records. The initial read service supports local SQLite and content-addressed files.
+- **Infrastructure:** pinned container builds, bounded local Compose services, Helm/KubeRay configuration and a validated Terraform AWS foundation. AWS/Hugging Face deployment and the full recorded demo are still pending.
+
+## Run locally
+
+Python 3.12, uv and Bun 1.3.10 are the tested development tools. Run the transport fixture first:
+
+```sh
 uv sync
 uv run uvicorn finserve.gateway.app:from_env --factory --host 127.0.0.1 --port 8000
-curl -N http://127.0.0.1:8000/v1/completions -H 'Content-Type: application/json' -d '{"prompt":"hello","max_tokens":5}'
-uv run pytest
-uv run ruff check .
-uv run pyright
 ```
 
-The default `FINSERVE_ENGINE=fixture` echoes character tokens for transport testing.
-Set `FINSERVE_API_KEY` to require bearer authentication. The fixture provides no evidence
-of language-model quality, GPU throughput, or production readiness.
+In another terminal:
 
-## Performance targets (not measured results)
+```sh
+curl -N http://127.0.0.1:8000/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"hello","max_tokens":5}'
+```
 
-| Metric                           | Baseline target | Optimized target |
-| -------------------------------- | ------------: | ---------------: |
-| Sustained request throughput     | 38 requests/s |    94 requests/s |
-| Token throughput                 |          1.0x |    2.4x baseline |
-| Median TTFT                      |        690 ms |           295 ms |
-| p95 end-to-end latency           |         3.8 s |            1.9 s |
-| GPU cost per 1M generated tokens |      baseline |        37% lower |
-| Output-quality parity            |     reference |            99.2% |
-| Successful requests under load   |           n/a |           99.95% |
-| Average GPU utilization          |           n/a |              81% |
-| Regression rollback              |           n/a |      within 94 s |
-| Benchmark requests               |           n/a |           6,000+ |
+The default fixture echoes character tokens. Set `FINSERVE_API_KEY` to require bearer authentication. For real text inference, configure `FINSERVE_ENGINE=vllm` or `sglang`, `FINSERVE_ENGINE_URL=<internal /v1 URL>` and the exact served `FINSERVE_MODEL`. An external engine must already be running. The API process does not load those GPU weights itself.
 
-These numbers are goals. No release benchmark currently supports them.
-[`docs/results.md`](docs/results.md) tracks evidence availability and prevents planned
-results from being presented as achievements.
-
-## What FinServe serves
-
-1. **Text inference**: PyTorch reference path, vLLM primary optimized engine, SGLang comparison path, continuous batching, KV-cache-aware routing, speculative decoding, streaming OpenAI-compatible endpoints.
-2. **Multimodal inference**: JAX/Flax autoregressive visual-token reference path, engine-compatible multimodal workers, stage-aware scheduling, and a research path for proposal/verification over discrete visual tokens when the model formulation supports it.
+[Commands](docs/commands.md) cover verification and measurement. Follow the [Bun edge setup](apps/api/README.md), [explorer setup](apps/web/README.md), [container setup](infra/docker/README.md) and [Airflow setup](pipelines/airflow_dags/README.md) for the separate processes. Keep credentials, databases, artifacts and raw evidence outside the source checkout.
 
 ## Architecture
 
-```text
-Browser / SDK / load generator
-          |
-          v
-TypeScript + Bun edge gateway
-          |
-          v
-FastAPI OpenAI-compatible ingress
-          |
-          +---------------------------+
-          |                           |
-          | synchronous text stream   | async long-form visual job
-          v                           v
-   Ray Serve router                Redis job state
-          |                           |
-          |                           v
-          |                     Ray Serve worker
-          |
-          +--> GPU / cache / load-aware replica routing
-          +--> vLLM engine pool
-          +--> SGLang comparison pool
-          +--> JAX/Flax multimodal pool
-          +--> optional disaggregated prefill/decode or multimodal stages
-          |
-          v
-      streamed result
-
-Control and evidence plane
-RDS PostgreSQL     model/deployment/benchmark metadata
-S3                 artifacts, results, traces, reports
-MLflow             optimization/eval/promotion evidence
-Redis               rate limits, bounded cache, async job state
-Airflow             fetch/verify/optimize/build/evaluate/deploy workflow
-Langfuse            inference/eval trace exploration
-OpenTelemetry       distributed traces
-Prometheus          serving/GPU/application metrics
-Grafana/CloudWatch  dashboards and alerts
-EKS + KubeRay       Ray clusters and GPU workers
-Terraform           AWS infrastructure
-Vercel              benchmark/deployment explorer
+```mermaid
+flowchart LR
+  Client[SDK / load generator] --> Edge[Bun inference edge]
+  Edge --> API[FastAPI admission + SSE]
+  API --> Ray[Optional Ray HTTP router]
+  Ray --> Text[vLLM / SGLang engines]
+  API --> Text
+  API --> Vision[Pretrained vision engine]
+  API --> Jobs[SQLite visual job coordinator]
+  Jobs --> RPC[gRPC JAX/Flax worker]
+  API -. quota .-> Redis[Redis]
+  Browser[Evidence explorer] --> Web[Bun read proxy]
+  Web --> GraphQL[Bounded GraphQL service]
+  GraphQL --> Catalog[SQL metadata + verified artifacts]
+  Pipeline[Airflow / CLI gate] --> Catalog
+  Pipeline --> Route[Generation-fenced warm route control]
 ```
 
-### Request-path rule
+Engines own batching, model execution and GPU memory. Ray owns routing leases. Redis provides optional quota/cache state; it is not the text-stream queue or durable visual-job database. GraphQL stays outside inference scheduling. Deployment profiles bind model, tokenizer, engine configuration and image identities before the gate evaluates promotion.
 
-Redis is **not** placed between a streaming text request and the inference engine as a mandatory queue. Ray Serve and the inference engine already own request admission, replica queues, and continuous batching. Redis is used for rate limiting, bounded caching, short-lived routing metadata, and explicit asynchronous visual jobs.
+## Documentation and demo
 
-## Protocol roles
+- [High-level design](docs/HLD.md) and [low-level design](docs/LLD.md)
+- [Benchmark methodology](docs/benchmark-methodology.md) and [results](docs/results.md)
+- [Multimodal implementation](src/finserve/multimodal/README.md)
+- [Deployment](docs/deployment.md) and [demo status](docs/demo.md)
 
-```text
-REST / OpenAI HTTP   inference and state-changing control commands
-gRPC                 selected internal typed/streaming boundaries
-GraphQL              read-only benchmark/deployment explorer
-```
+A real demo recording and GIF will be added after browser visual verification and deployment. No mock screenshot or simulated deployment is presented as that deliverable.
 
-GraphQL stays off the latency-critical inference path.
+## Next improvements
 
-## Repository map
+**Product:** expand chart reasoning beyond three functional probes and improve exact-format correctness before accepting an optimized release.
 
-```text
-apps/api/                  FastAPI ingress/control
-apps/web/                  TypeScript/Bun dashboard
-src/finserve/contracts/    typed schemas
-src/finserve/gateway/      auth/rate-limit/admission
-src/finserve/scheduler/    routing/GPU policy
-src/finserve/engines/      PyTorch/vLLM/SGLang adapters
-src/finserve/multimodal/   JAX/Flax and stage-aware serving
-src/finserve/benchmark/    workloads/metrics/cost
-src/finserve/evaluation/   quality-parity and failure evals
-src/finserve/registry/     model/deployment evidence
-src/finserve/telemetry/    OTel/Langfuse/Prometheus
-src/finserve/reliability/  retries/health/rollback
-pipelines/airflow_dags/
-infra/{docker,kubernetes,terraform}/
-tests/ evals/ benchmarks/ monitoring/
-```
+**Architecture:** complete artifact-bound runtime production, real multi-engine capacity experiments, cloud deployment and end-to-end tracing across the Ray/engine boundary.
 
-## Development philosophy
-
-```text
-baseline -> benchmark -> one optimization -> measure -> quality gate -> keep/reject
-```
-
-The repository does not keep an optimization because it sounds advanced.
-
-## MVP
-
-```text
-load generator -> FastAPI -> one vLLM model -> stream -> benchmark recorder -> OTel/Prometheus -> quality check
-```
-
-The MVP proves the measurement loop before distributed serving, multimodal workers, Airflow, KubeRay, or advanced routing.
-
-## Key docs
-
-- [PRD](PRD.md)
-- [System design](docs/system-design.md)
-- [Architecture alternatives](docs/architecture-alternatives.md)
-- [HLD](docs/HLD.md)
-- [LLD](docs/LLD.md)
-- [Inference fundamentals](docs/inference-fundamentals.md)
-- [Scheduling and batching](docs/scheduling-and-batching.md)
-- [Speculative decoding](docs/speculative-decoding.md)
-- [Multimodal serving](docs/multimodal-serving.md)
-- [Benchmark methodology](docs/benchmark-methodology.md)
-- [Evaluation](docs/evaluation.md)
-- [Observability](docs/observability.md)
-- [Performance](docs/performance.md)
-- [Security](docs/security.md)
-- [Failure modes](docs/failure-modes.md)
-- [Deployment](docs/deployment.md)
-
-## Non-goals
-
-- training a frontier base model,
-- pretending every workload benefits from speculation,
-- routing streaming text through an unnecessary external queue,
-- using an LLM judge for deterministic performance facts.
+**Engineering:** repeat and randomize paired measurements, distinguish physical GPU telemetry from per-engine cache occupancy, measure real billed cost, and exercise node/process loss separately from warm route rollback. These remaining checks are tracked explicitly rather than inferred from passing unit tests.
