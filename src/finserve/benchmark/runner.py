@@ -35,6 +35,8 @@ class RunConfig(BaseModel):
     tokenizer_revision: str = Field(default="undeclared", min_length=1)
     engine: str = Field(default="undeclared", min_length=1)
     engine_config: str = Field(default="undeclared", min_length=1)
+    image_digest: str = Field(default="undeclared", min_length=1)
+    config_digest: str = Field(default="undeclared", min_length=1)
     cache_policy: str = "engine-default; warmup may populate caches"
 
 
@@ -508,6 +510,8 @@ def main() -> None:
     parser.add_argument("--tokenizer-revision", default="undeclared")
     parser.add_argument("--engine", default="undeclared")
     parser.add_argument("--engine-config", default="undeclared")
+    parser.add_argument("--image-digest", default="undeclared")
+    parser.add_argument("--config-digest", default="undeclared")
     args = parser.parse_args()
     workload = (
         Workload.model_validate_json(args.workload.read_text())
@@ -528,6 +532,8 @@ def main() -> None:
         tokenizer_revision=args.tokenizer_revision,
         engine=args.engine,
         engine_config=args.engine_config,
+        image_digest=args.image_digest,
+        config_digest=args.config_digest,
     )
 
     async def execute() -> None:
