@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -12,9 +13,13 @@ from typing import Any
 import httpx
 import pytest
 
+from finserve.benchmark.gpu import TelemetrySample
+from finserve.benchmark.runner import RunConfig
+from finserve.benchmark.workload import WorkItem, Workload
 from finserve.contracts.deployment import Revision
 from finserve.contracts.managed_runtime import RuntimeLaunchSpec, RuntimeReceipt
 from finserve.contracts.model_assets import ModelFetchSpec, SourceFile
+from finserve.contracts.performance import PerformanceCollectionSpec
 from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.http_ownership import HTTPClosureError
 from finserve.registry.artifacts import ArtifactRef, LocalArtifactStore
@@ -29,6 +34,11 @@ from finserve.registry.managed_runtime import (
 )
 from finserve.registry.metadata import Registry, RegistryConflict
 from finserve.registry.model_assets import verify_snapshot
+from finserve.registry.performance_stages import (
+    load_performance_receipt,
+    performance_stage,
+    register_managed_gpu,
+)
 from finserve.registry.producer_stages import ProducerStages, StageState
 from finserve.registry.producer_tasks import ModelSnapshotReceipt, declare_input
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage, expected_labels
@@ -281,6 +291,391 @@ def upstream(journal: ProducerStages, spec: RuntimeLaunchSpec, tmp_path: Path) -
         "job:build", state.attempt_id, journal.artifacts.put(spec.image.model_dump_json().encode())
     )
     return spec
+
+
+def performance_spec(spec: RuntimeLaunchSpec) -> PerformanceCollectionSpec:
+    """Freeze fixture workload and source/image mapping using the same runtime contract."""
+    revision = spec.revision
+    config = RunConfig(
+        requests=4,
+        warmup=1,
+        concurrency=2,
+        hardware="fixture-cpu",
+        model=spec.profile.served_model,
+        revision=revision.source_revision,
+        model_revision=revision.model_revision,
+        tokenizer_revision=revision.tokenizer_revision,
+        engine=revision.engine,
+        engine_config=revision.engine_config,
+        image_digest=revision.image_digest,
+        config_digest=revision.config_digest,
+    )
+    return PerformanceCollectionSpec(
+        collection_id="fixture",
+        collector_revision="c" * 40,
+        profile=spec.profile,
+        revision=revision,
+        configuration=config,
+        workload=Workload(
+            suite_id="fixture",
+            version=1,
+            items=(WorkItem(case_id="one", prompt="hello", max_tokens=1),),
+        ),
+        timeout_seconds=30,
+    )
+
+
+async def test_performance_stage_replays_verified_cas_without_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Actual benchmark rows survive registration and altered derived evidence cannot replay."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        runtime_spec = upstream(journal, specification(tmp_path), tmp_path)
+        spec = performance_spec(runtime_spec)
+        runtime = DockerRuntime(Daemon(runtime_spec))
+        calls: list[str] = []
+
+        def response(request: httpx.Request) -> httpx.Response:
+            """Use one protocol fixture for runtime observations and the measured HTTP transport."""
+            calls.append(str(request.url))
+            return handler(request)
+
+        def fixture_client(config: RunConfig) -> httpx.AsyncClient:
+            """Install the protocol fixture on the independent collector event loop."""
+            return httpx.AsyncClient(transport=httpx.MockTransport(response))
+
+        monkeypatch.setattr("finserve.benchmark.experiment.benchmark_client", fixture_client)
+
+        def clean_git(arguments: list[str], **kwargs: object) -> str:
+            """Use explicitly synthetic collector provenance for this protocol fixture."""
+            return "" if arguments[1] == "status" else "c" * 40 + "\n"
+
+        monkeypatch.setattr("finserve.benchmark.experiment.subprocess.check_output", clean_git)
+        monkeypatch.setattr(
+            "finserve.benchmark.experiment.collect",
+            lambda: TelemetrySample(
+                epoch_s=time.time(), collection_seconds=0, devices=[], error="FixtureNoGPU"
+            ),
+        )
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+            await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                runtime_spec,
+                tmp_path / "runtime",
+                client,
+                runtime,
+            )
+            receipt = await performance_stage(
+                journal,
+                "job:performance",
+                "job:launch",
+                spec,
+                tmp_path / "performance",
+                client,
+                runtime,
+            )
+            count = len(calls)
+            assert (
+                await performance_stage(
+                    journal,
+                    "job:performance",
+                    "job:launch",
+                    spec,
+                    tmp_path / "performance",
+                    client,
+                    runtime,
+                )
+                == receipt
+            )
+            assert len(calls) == count
+            assert registry.run(receipt.run.run_id) == receipt.run
+            annotation = register_managed_gpu(journal, "job:performance")
+            assert register_managed_gpu(journal, "job:performance") == annotation
+            assert annotation.run_id == receipt.run.run_id
+            environment = json.loads(journal.artifacts.get(receipt.environment))
+            assert environment["git_sha"] != runtime_spec.image.specification.source_revision
+            assert (
+                json.loads(journal.artifacts.get(receipt.gpu_summary))[
+                    "average_gpu_utilization_percent"
+                ]
+                is None
+            )
+            altered = [
+                receipt.model_copy(
+                    update={
+                        "telemetry": journal.artifacts.put(
+                            b'{"epoch_s":1,"collection_seconds":0,"devices":[{"uuid":"fixture","name":"fixture","utilization_percent":1,"utilization_percent":99,"memory_used_mib":1,"memory_total_mib":2}]}\n'
+                        )
+                    }
+                ),
+                receipt.model_copy(update={"gpu_summary": journal.artifacts.put(b"{}")}),
+                receipt.model_copy(update={"environment": journal.artifacts.put(b"[]")}),
+                receipt.model_copy(
+                    update={"environment": journal.artifacts.put(b'{"key":1,"key":2}')}
+                ),
+                receipt.model_copy(
+                    update={
+                        "environment": journal.artifacts.put(
+                            json.dumps(
+                                {**environment, "clock_epoch_anchor_s": float("nan")}
+                            ).encode()
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={
+                        "specification": journal.artifacts.put(
+                            spec.model_copy(update={"maximum_raw_bytes": 1024}).canonical().encode()
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={
+                        "specification": journal.artifacts.put(
+                            spec.model_copy(
+                                update={
+                                    "revision": spec.revision.model_copy(
+                                        update={"revision_id": "different"}
+                                    )
+                                }
+                            )
+                            .canonical()
+                            .encode()
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={"runtime": runtime_spec.model_copy(update={"memory_mib": 9000})}
+                ),
+                receipt.model_copy(
+                    update={"run": receipt.run.model_copy(update={"workload_hash": "wrong"})}
+                ),
+                receipt.model_copy(
+                    update={"before": receipt.before.model_copy(update={"container_id": "0" * 64})}
+                ),
+                receipt.model_copy(
+                    update={
+                        "after": receipt.after.model_copy(
+                            update={"observed_at": receipt.before.observed_at - 1}
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={
+                        "before": receipt.before.model_copy(
+                            update={"observed_at": receipt.after.observed_at}
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={
+                        "environment": journal.artifacts.put(
+                            json.dumps({**environment, "git_sha": "main"}).encode()
+                        )
+                    }
+                ),
+            ]
+            for changed in altered:
+                with pytest.raises(ValueError):
+                    load_performance_receipt(
+                        journal, journal.artifacts.put(changed.model_dump_json().encode())
+                    )
+            status = json.loads(journal.artifacts.get(receipt.status))
+            gpu = json.loads(journal.artifacts.get(receipt.gpu_summary))
+            drifted = receipt.model_copy(
+                update={
+                    "status": journal.artifacts.put(
+                        json.dumps({**status, "clock_drift_seconds": 1.0}).encode()
+                    ),
+                    "gpu_summary": journal.artifacts.put(
+                        json.dumps(
+                            {
+                                **gpu,
+                                "average_gpu_utilization_percent": None,
+                                "clock_warning": "wall/monotonic clock drift exceeded 100ms",
+                            }
+                        ).encode()
+                    ),
+                }
+            )
+            assert (
+                load_performance_receipt(
+                    journal, journal.artifacts.put(drifted.model_dump_json().encode())
+                )
+                == drifted
+            )
+            changed_spec = spec.model_copy(update={"collection_id": "changed"})
+            declare_input(
+                journal,
+                "job:forged",
+                {
+                    "kind": "performance-collection-v1",
+                    "specification": json.loads(changed_spec.canonical()),
+                    "workspace": str(tmp_path / "performance"),
+                    "launch_stage_id": "job:launch",
+                    "launch": receipt.launch.model_dump(),
+                },
+            )
+            forged = journal.start("job:forged")
+            assert forged.attempt_id is not None
+            journal.finish(
+                "job:forged",
+                forged.attempt_id,
+                journal.artifacts.put(receipt.model_dump_json().encode()),
+            )
+            with pytest.raises(ValueError, match="stage or image revision"):
+                register_managed_gpu(journal, "job:forged")
+            declare_input(journal, "job:planned-performance", {})
+            with pytest.raises(ValueError, match="completed performance"):
+                register_managed_gpu(journal, "job:planned-performance")
+            with pytest.raises(ValueError, match="completed receipt differs"):
+                await performance_stage(
+                    journal,
+                    "job:forged",
+                    "job:launch",
+                    changed_spec,
+                    tmp_path / "performance",
+                    client,
+                    runtime,
+                )
+            foreign_runtime = spec.model_copy(
+                update={"revision": spec.revision.model_copy(update={"revision_id": "different"})}
+            )
+            with pytest.raises(ValueError, match="runtime differs"):
+                await performance_stage(
+                    journal,
+                    "job:foreign",
+                    "job:launch",
+                    foreign_runtime,
+                    tmp_path / "performance",
+                    client,
+                    runtime,
+                )
+            with pytest.raises(RegistryConflict):
+                await performance_stage(
+                    journal,
+                    "job:performance",
+                    "job:launch",
+                    spec.model_copy(update={"collection_id": "changed"}),
+                    tmp_path / "performance",
+                    client,
+                    runtime,
+                )
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize("closure_failed", [False, True])
+async def test_performance_stage_retains_failed_or_unresolved_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, closure_failed: bool
+) -> None:
+    """Only positively drained local collection failures allow a new attempt."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        runtime_spec = upstream(journal, specification(tmp_path), tmp_path)
+        runtime = DockerRuntime(Daemon(runtime_spec))
+
+        async def fail(spec: PerformanceCollectionSpec, output: Path) -> None:
+            """Inject an explicit ownership result after real runtime readiness checks."""
+            if closure_failed:
+                raise HTTPClosureError("fixture unresolved close")
+            raise TimeoutError("fixture deadline")
+
+        monkeypatch.setattr("finserve.registry.performance_stages.collect_performance", fail)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                runtime_spec,
+                tmp_path / "runtime",
+                client,
+                runtime,
+            )
+            with pytest.raises(HTTPClosureError if closure_failed else TimeoutError):
+                await performance_stage(
+                    journal,
+                    "job:performance",
+                    "job:launch",
+                    performance_spec(runtime_spec),
+                    tmp_path / "performance",
+                    client,
+                    runtime,
+                )
+        state = journal.state("job:performance")
+        assert state.status == ("running" if closure_failed else "failed")
+        assert (state.reconciliation is None) == closure_failed
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_performance_path_preparation_is_reconciled_before_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancelled: bool
+) -> None:
+    """An owned path error or cancelled path worker cannot strand a never-offered attempt."""
+    registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
+    entered, release = threading.Event(), threading.Event()
+    try:
+        journal = ProducerStages(registry, LocalArtifactStore(tmp_path / "artifacts"))
+        runtime_spec = upstream(journal, specification(tmp_path), tmp_path)
+        daemon = Daemon(runtime_spec)
+        runtime = DockerRuntime(daemon)
+
+        def path_failure(workspace: Path, state: StageState) -> Path:
+            """Hold only owned path preparation; no new runtime probe has been issued."""
+            entered.set()
+            if cancelled:
+                assert release.wait(5)
+                return workspace / "unused"
+            raise ValueError("fixture path validation")
+
+        monkeypatch.setattr("finserve.registry.performance_stages.attempt_directory", path_failure)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await launch_runtime_stage(
+                journal,
+                "job:launch",
+                "job:model",
+                "job:build",
+                runtime_spec,
+                tmp_path / "runtime",
+                client,
+                runtime,
+            )
+            before = len(daemon.calls)
+            task = asyncio.create_task(
+                performance_stage(
+                    journal,
+                    "job:performance",
+                    "job:launch",
+                    performance_spec(runtime_spec),
+                    tmp_path / "performance",
+                    client,
+                    runtime,
+                )
+            )
+            assert await asyncio.to_thread(entered.wait, 3)
+            if cancelled:
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+                assert not task.done()
+                release.set()
+            with pytest.raises(asyncio.CancelledError if cancelled else ValueError):
+                await task
+            assert len(daemon.calls) == before
+        state = journal.state("job:performance")
+        assert state.status == "failed" and state.reconciliation is not None
+    finally:
+        release.set()
+        registry.close()
 
 
 async def test_runtime_stages_reconcile_replay_and_stop(tmp_path: Path) -> None:

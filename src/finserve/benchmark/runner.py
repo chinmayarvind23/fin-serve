@@ -305,6 +305,7 @@ async def run_phase(
     start = time.perf_counter()
     recorded: set[int] = set()
     arrivals: dict[int, float] = {}
+    closure_failed = False
 
     def persist(row: RequestRecord) -> None:
         """Track exactly-once persistence so interruption can account for unsent work."""
@@ -313,15 +314,23 @@ async def run_phase(
 
     async def worker() -> None:
         """Each worker owns at most one network request, bounding sockets and task count."""
+        nonlocal closure_failed
         while True:
             job = await queue.get()
             try:
                 if job is None:
                     return
+                if closure_failed:
+                    raise HTTPClosureError("phase HTTP cleanup remains unresolved")
                 index, scheduled = job
                 item = workload.items[index % len(workload.items)]
                 row = await request_one(client, url, item, index, scheduled, config, phase)
+                if row.error == "HTTPClosureError":
+                    # Fence before persistence so an I/O failure cannot make cleanup retryable.
+                    closure_failed = True
                 persist(row)
+                if closure_failed:
+                    raise HTTPClosureError("phase HTTP cleanup remains unresolved")
                 if row.error == "CancelledError":
                     raise asyncio.CancelledError
             finally:
@@ -336,26 +345,30 @@ async def run_phase(
             for _ in range(config.concurrency):
                 await queue.put(None)
     except BaseException:
-        for index in range(count):
-            if index not in recorded:
-                item = workload.items[index % len(workload.items)]
-                now = time.perf_counter()
-                persist(
-                    RequestRecord(
-                        logical_id=index,
-                        case_id=item.case_id,
-                        family=item.family,
-                        phase=phase,
-                        scheduled_s=arrivals.get(index, now),
-                        complete_s=now,
-                        success=False,
-                        offered=index in arrivals,
-                        intended_arrival_s=start + index / config.rate
-                        if config.mode == "open"
-                        else None,
-                        error="run_interrupted_before_send",
+        try:
+            for index in range(count):
+                if index not in recorded:
+                    item = workload.items[index % len(workload.items)]
+                    now = time.perf_counter()
+                    persist(
+                        RequestRecord(
+                            logical_id=index,
+                            case_id=item.case_id,
+                            family=item.family,
+                            phase=phase,
+                            scheduled_s=arrivals.get(index, now),
+                            complete_s=now,
+                            success=False,
+                            offered=index in arrivals,
+                            intended_arrival_s=start + index / config.rate
+                            if config.mode == "open"
+                            else None,
+                            error="run_interrupted_before_send",
+                        )
                     )
-                )
+        finally:
+            if closure_failed:
+                raise HTTPClosureError("phase HTTP cleanup remains unresolved") from None
         raise
     return time.perf_counter() - start
 
@@ -458,25 +471,36 @@ async def run_benchmark(
     }
     write_json(output / "manifest.json", manifest)
     records: list[RequestRecord] = []
-    with (output / "requests.jsonl").open("x", encoding="utf-8") as raw:
+    closure_failure: HTTPClosureError | None = None
+    try:
+        with (output / "requests.jsonl").open("x", encoding="utf-8") as raw:
 
-        def record(row: RequestRecord) -> None:
-            """Flush observations immediately so interrupted runs retain completed evidence."""
-            raw.write(row.model_dump_json() + "\n")
-            raw.flush()
-            # Text is already durable in JSONL; avoid retaining every generated output in RAM.
-            records.append(row.model_copy(update={"output": ""}))
+            def record(row: RequestRecord) -> None:
+                """Flush observations immediately so interrupted runs retain completed evidence."""
+                raw.write(row.model_dump_json() + "\n")
+                raw.flush()
+                # Text is already durable in JSONL; avoid retaining every generated output in RAM.
+                records.append(row.model_copy(update={"output": ""}))
 
-        try:
-            await run_phase(client, url, workload, config, config.warmup, "warmup", record)
-            measured_start = time.perf_counter()
-            await run_phase(client, url, workload, config, config.requests, "measured", record)
-            measured_end = time.perf_counter()
-            duration = measured_end - measured_start
-        except BaseException:
-            manifest["status"] = "interrupted"
-            write_json(output / "manifest.json", manifest)
-            raise
+            try:
+                await run_phase(client, url, workload, config, config.warmup, "warmup", record)
+                measured_start = time.perf_counter()
+                await run_phase(client, url, workload, config, config.requests, "measured", record)
+                measured_end = time.perf_counter()
+                duration = measured_end - measured_start
+            except BaseException as failure:
+                if isinstance(failure, HTTPClosureError):
+                    closure_failure = failure
+                manifest["status"] = "interrupted"
+                try:
+                    write_json(output / "manifest.json", manifest)
+                finally:
+                    if isinstance(failure, HTTPClosureError):
+                        raise failure
+                raise
+    finally:
+        if closure_failure is not None:
+            raise closure_failure
     summary = build_summary(records, duration, workload)
     write_json(output / "summary.json", summary)
     manifest["status"] = "completed"

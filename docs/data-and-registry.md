@@ -20,6 +20,21 @@ The model producer keeps weights on a bounded local volume and records a small v
 
 ## Separate control stores
 
+The managed performance stage freezes the workload, load configuration, collector commit,
+serving profile and completed launch receipt before collection. It observes the same container
+ID and start time before and after measurement, then recomputes request and GPU summaries
+before publishing an immutable receipt. Completed replay verifies those stored bytes without
+sending new requests. The collector must run from its declared clean commit; that commit is
+recorded separately from the engine image's source commit. Missing GPU samples remain missing.
+
+Collection runs on a dedicated event loop with bounded request population, elapsed-time and
+raw-byte limits. Cancellation drains local work. An unresolved HTTP close immediately stops
+new offers, drains active workers and leaves the stage unresolved, including when evidence
+persistence also fails. Byte limits are observed between writes and native cleanup may outlive
+the deadline. These controls do not prove remote GPU cancellation or release approval. The
+complete producer-to-activation Airflow path and a live GPU run through this collection stage
+remain pending.
+
 `DeploymentStore` uses SQLite for known-good revisions, decisions, detector signals and rollback state. `WarmRouteStore` is a separate SQLite store representing the external traffic route, with its own generation and idempotency receipts. Registry approval does not imply traffic activation or verified recovery.
 
 MLflow is an optional reporting mirror with verified decision-to-run binding; it cannot authorize deployment. Local MLflow integration is tested. Redis owns ephemeral serving state, never evidence or recovery truth. [Airflow pipeline](airflow-pipeline.md) describes the implemented lifecycle and remaining producer orchestration.

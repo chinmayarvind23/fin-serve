@@ -10,6 +10,7 @@ from pathlib import Path
 from finserve.benchmark.gpu import TelemetrySample, aggregate, collect
 from finserve.benchmark.runner import RunConfig, benchmark_client, run_benchmark, write_json
 from finserve.benchmark.workload import Workload
+from finserve.http_ownership import HTTPClosureError
 
 
 async def drain[T](task: asyncio.Task[T]) -> T:
@@ -46,13 +47,21 @@ async def record_gpu(path: Path, stopped: asyncio.Event) -> list[TelemetrySample
 
 
 def prepare_experiment(
-    output: Path, workload: Workload, config: RunConfig
+    output: Path, workload: Workload, config: RunConfig, collector_revision: str | None = None
 ) -> tuple[Path, float, float]:
     """Complete filesystem and provenance setup before starting background measurement work."""
     repository = Path(__file__).resolve().parents[3]
     output = output.resolve()
     if output == repository or repository in output.parents:
         raise ValueError("experiment evidence must be outside the source repository")
+    source_revision = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repository, text=True, timeout=15
+    ).strip()
+    source_status = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=repository, text=True, timeout=15
+    ).splitlines()
+    if collector_revision is not None and (source_revision != collector_revision or source_status):
+        raise ValueError("collector source must match the frozen clean commit")
     output.mkdir(parents=True, exist_ok=False)
     epoch_anchor, monotonic_anchor = time.time(), time.perf_counter()
     write_json(
@@ -60,12 +69,8 @@ def prepare_experiment(
         {
             "clock_epoch_anchor_s": epoch_anchor,
             "clock_monotonic_anchor_s": monotonic_anchor,
-            "git_sha": subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=repository, text=True
-            ).strip(),
-            "git_status": subprocess.check_output(
-                ["git", "status", "--porcelain"], cwd=repository, text=True
-            ).splitlines(),
+            "git_sha": source_revision,
+            "git_status": source_status,
             "configuration": config.model_dump(),
             "workload_hash": workload.digest(),
             "gpu_observation": "local nvidia-smi; fixed GPU inventory; query-end timestamps",
@@ -76,21 +81,36 @@ def prepare_experiment(
 
 
 async def experiment(
-    url: str, output: Path, workload: Workload, config: RunConfig
+    url: str,
+    output: Path,
+    workload: Workload,
+    config: RunConfig,
+    *,
+    collector_revision: str | None = None,
 ) -> dict[str, object]:
     """Keep startup/measurement failures and declare local clock mapping uncertainty."""
     output, epoch_anchor, monotonic_anchor = await asyncio.to_thread(
-        prepare_experiment, output, workload, config
+        prepare_experiment, output, workload, config, collector_revision
     )
     stopped = asyncio.Event()
     collector = asyncio.create_task(record_gpu(output / "gpu.jsonl", stopped))
     status: dict[str, object] = {"status": "running"}
     samples: list[TelemetrySample] = []
+    closure_failure: HTTPClosureError | None = None
 
     async def benchmark() -> dict[str, object]:
         """One pool is owned by the measured task, including its cancellation path."""
-        async with benchmark_client(config) as client:
-            return await run_benchmark(client, url, workload, config, output / "run")
+        failure: HTTPClosureError | None = None
+        try:
+            async with benchmark_client(config) as client:
+                try:
+                    return await run_benchmark(client, url, workload, config, output / "run")
+                except HTTPClosureError as exc:
+                    failure = exc
+                    raise
+        finally:
+            if failure is not None:
+                raise failure
 
     measured = asyncio.create_task(benchmark())
     try:
@@ -101,10 +121,14 @@ async def experiment(
         summary = await measured
         status["status"] = "completed"
     except BaseException as exc:
+        if isinstance(exc, HTTPClosureError):
+            closure_failure = exc
         status.update(status="interrupted", error=type(exc).__name__)
         measured.cancel()
         try:
             await drain(measured)
+        except HTTPClosureError as failure:
+            closure_failure = failure
         except (Exception, asyncio.CancelledError):
             pass
         raise
@@ -120,7 +144,11 @@ async def experiment(
         finally:
             elapsed = time.perf_counter() - monotonic_anchor
             status["clock_drift_seconds"] = time.time() - epoch_anchor - elapsed
-            write_json(output / "experiment-status.json", status)
+            try:
+                write_json(output / "experiment-status.json", status)
+            finally:
+                if closure_failure is not None:
+                    raise closure_failure
     manifest = json.loads((output / "run" / "manifest.json").read_text())
     start = epoch_anchor + manifest["measured_started_s"] - monotonic_anchor
     end = epoch_anchor + manifest["measured_finished_s"] - monotonic_anchor

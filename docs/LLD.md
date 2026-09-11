@@ -63,6 +63,24 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+`PerformanceCollectionSpec` binds the workload and request configuration to a serving profile,
+runtime revision and separate collector commit. The producer journal freezes this specification
+and the completed launch reference. Before and after collection, the Docker adapter checks the
+same container ID, start time and runtime specification. Publication verifies that the measured
+epoch window lies between those observations, recomputes serving and GPU summaries, and
+registers the raw artifact references. Replay reconstructs and validates those artifacts without
+reoffering inference. A managed GPU annotation follows this verified receipt chain instead of
+assuming that collector source and engine-image source are the same commit.
+
+The collector uses an isolated event loop so synchronous evidence writes do not block
+orchestration. Its limit is 1,024 workload items, 65,536 total requests and 128 concurrent
+workers, with at most two hours and 512 MiB of observed raw artifacts. Limits are checked
+between writes; they do not impose a hard disk quota. After a failed HTTP close, the benchmark
+fences new offers before persisting the failure row, drains peer tasks, and preserves cleanup
+uncertainty even if a raw write also fails. The producer leaves that attempt running for explicit
+reconciliation. Successful local draining permits a failed attempt; it does not establish remote
+inference termination.
+
 `requests_per_second = successful_measured_requests / measured_seconds`.
 
 `tokens_per_second = sum(authoritative_generated_tokens_for_successful_measured_requests) / measured_seconds`.
