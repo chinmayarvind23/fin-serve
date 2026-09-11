@@ -925,6 +925,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cache = [
+    { name = "redis" },
+]
 distributed = [
     { name = "jinja2" },
     { name = "ray", extra = ["serve"] },
@@ -971,12 +974,13 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'registry'", specifier = ">=3,<4" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "ray", extras = ["serve"], marker = "extra == 'distributed'", specifier = ">=2.40,<3" },
+    { name = "redis", marker = "extra == 'cache'", specifier = ">=5,<7" },
     { name = "redis", marker = "extra == 'distributed'", specifier = ">=5,<7" },
     { name = "sqlalchemy", marker = "extra == 'registry'", specifier = ">=2,<3" },
     { name = "torch", marker = "extra == 'reference'", specifier = ">=2.6,<3" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
-provides-extras = ["reference", "distributed", "registry", "multimodal"]
+provides-extras = ["reference", "cache", "distributed", "registry", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [

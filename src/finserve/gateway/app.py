@@ -17,6 +17,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import ValidationError
 from starlette.types import Receive, Scope, Send
 
+from finserve.cache.redis_state import RateLimiter
 from finserve.contracts.inference import ChatRequest, EngineToken, InferenceRequest
 from finserve.engines.base import Engine
 from finserve.engines.fixture import FixtureEngine
@@ -103,6 +104,29 @@ class Serving:
     model: str
     api_key: str | None
     tracer: Tracer
+    rate_limiter: RateLimiter | None = None
+
+    async def quota_response(self, request_id: str, deadline: float) -> Response | None:
+        """Rate limiting is an optional pre-admission hop with explicit failure semantics."""
+        if self.rate_limiter is None:
+            return None
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return error_response("DEADLINE_EXCEEDED", 504, request_id)
+        try:
+            async with asyncio.timeout(min(remaining, 0.3)):
+                decision = await self.rate_limiter.allow(self.api_key or "anonymous")
+        except Exception:
+            if time.perf_counter() >= deadline:
+                return error_response("DEADLINE_EXCEEDED", 504, request_id)
+            self.metrics.requests.labels(outcome="quota_unavailable").inc()
+            return error_response("QUOTA_UNAVAILABLE", 503, request_id)
+        if decision.allowed:
+            return None
+        self.metrics.requests.labels(outcome="rate_limited").inc()
+        response = error_response("RATE_LIMITED", 429, request_id)
+        response.headers["Retry-After"] = str(max(1, (decision.retry_after_ms + 999) // 1000))
+        return response
 
     async def events(
         self, request: InferenceRequest, received: float, chat: bool, lease: Lease | None = None
@@ -201,6 +225,11 @@ class Serving:
             return error_response("UNAUTHORIZED", 401, payload.request_id)
         if payload.model != self.model:
             return error_response("MODEL_NOT_FOUND", 404, payload.request_id)
+        quota_error = await self.quota_response(
+            payload.request_id, received + payload.timeout_seconds
+        )
+        if quota_error is not None:
+            return quota_error
         if not self.admission.acquire():
             self.metrics.requests.labels(outcome="overloaded").inc()
             return error_response("OVERLOADED", 429, payload.request_id)
@@ -258,6 +287,7 @@ def create_app(
     api_key: str | None = None,
     tracing: TraceRuntime | None = None,
     revision: str = "unrecorded",
+    rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     """Tests inject engines; deployments select an explicit backend through the factory."""
     serving = Serving(
@@ -267,17 +297,24 @@ def create_app(
         model,
         api_key,
         tracing.tracer if tracing else NoOpTracer(),
+        rate_limiter,
     )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         """Close pooled clients when shutdown completes; Uvicorn handles request draining."""
-        yield
         try:
-            await serving.engine.close()
+            yield
         finally:
-            if tracing is not None:
-                await asyncio.to_thread(tracing.close)
+            try:
+                await serving.engine.close()
+            finally:
+                try:
+                    if rate_limiter is not None:
+                        await rate_limiter.close()
+                finally:
+                    if tracing is not None:
+                        await asyncio.to_thread(tracing.close)
 
     app = FastAPI(title="FinServe", version="0.1.0", lifespan=lifespan)
     app.add_middleware(BodyLimit)
@@ -334,6 +371,16 @@ def from_env() -> FastAPI:
     else:
         raise ValueError(f"Unsupported FINSERVE_ENGINE: {backend}")
     trace_path = os.getenv("FINSERVE_TRACE_PATH")
+    rate_limiter = None
+    if redis_url := os.getenv("FINSERVE_REDIS_URL"):
+        from finserve.cache.redis_state import from_url
+
+        rate_limiter = from_url(
+            redis_url,
+            os.environ["FINSERVE_REDIS_KEY_SECRET"].encode(),
+            limit=int(os.getenv("FINSERVE_RATE_LIMIT", "120")),
+            window_ms=int(os.getenv("FINSERVE_RATE_WINDOW_MS", "60000")),
+        )
     tracing = (
         TraceRuntime(
             JsonSpanExporter(Path(trace_path)),
@@ -349,4 +396,5 @@ def from_env() -> FastAPI:
         api_key=os.getenv("FINSERVE_API_KEY"),
         tracing=tracing,
         revision=os.getenv("FINSERVE_REVISION", "unrecorded"),
+        rate_limiter=rate_limiter,
     )
