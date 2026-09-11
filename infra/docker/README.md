@@ -33,8 +33,10 @@ host firewall rules must permit the connection. The base stack reserves no GPU.
 
 Add `compose.monitoring.yaml` as a second `-f` argument for Prometheus
 (`127.0.0.1:9097`) and Grafana (`127.0.0.1:3007`). This explicit override needs an
-independent `GRAFANA_PASSWORD`; the base stack does not. A Prometheus datasource
-is provisioned automatically.
+independent `GRAFANA_PASSWORD`; the base stack does not. A Prometheus datasource, text-gateway dashboard and four local alert rules
+are provisioned automatically. See the [monitoring guide](../../monitoring/README.md)
+for exact metric populations, alert defaults and the verified local outage/recovery
+probe. Notification delivery is not configured.
 
 The gateway runs as UID 10001 with a read-only root, dropped capabilities, bounded
 memory/CPU/process count and a small temporary filesystem. Redis has no published

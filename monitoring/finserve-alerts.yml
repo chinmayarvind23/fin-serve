@@ -1,0 +1,50 @@
+# Operator defaults are separate from immutable benchmark/release thresholds.
+# No notification receiver is configured; these rules expose local alert state only.
+groups:
+  - name: finserve-gateway
+    interval: 5s
+    rules:
+      - alert: FinServeGatewayScrapeUnavailable
+        expr: up{job="finserve"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: Gateway metrics endpoint is unavailable
+          runbook: docs/runbooks/queue-saturation.md
+      - alert: FinServeEngineFailureRatio
+        expr: |
+          (
+            sum by (job, instance) (rate(finserve_requests_total{job="finserve",outcome=~"engine_failed|timeout|quota_unavailable"}[2m]))
+            / sum by (job, instance) (rate(finserve_requests_total{job="finserve"}[2m]))
+          ) > 0.05
+          and sum by (job, instance) (increase(finserve_requests_total{job="finserve"}[2m])) >= 20
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Engine timeout failure or quota-store unavailability exceeds five percent
+          runbook: docs/runbooks/gpu-oom.md
+      - alert: FinServeAdmissionRejected
+        expr: |
+          (
+            sum by (job, instance) (rate(finserve_requests_total{job="finserve",outcome="overloaded"}[2m]))
+            / sum by (job, instance) (rate(finserve_requests_total{job="finserve"}[2m]))
+          ) > 0.10
+          and sum by (job, instance) (increase(finserve_requests_total{job="finserve"}[2m])) >= 20
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Gateway admission rejects more than ten percent of counted requests
+          runbook: docs/runbooks/queue-saturation.md
+      - alert: FinServeTTFTP95High
+        expr: |
+          histogram_quantile(0.95, sum by (job, instance, le) (rate(finserve_server_ttft_seconds_bucket{job="finserve"}[2m]))) > 1
+          and sum by (job, instance) (increase(finserve_server_ttft_seconds_count{job="finserve"}[2m])) >= 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Approximate server TTFT p95 exceeds one second
+          runbook: docs/runbooks/queue-saturation.md

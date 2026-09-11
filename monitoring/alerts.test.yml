@@ -1,0 +1,100 @@
+rule_files: [finserve-alerts.yml]
+evaluation_interval: 5s
+tests:
+  - name: A failed scrape waits thirty seconds and resolves on recovery
+    interval: 5s
+    input_series:
+      - series: 'up{job="finserve",instance="gateway:8000"}'
+        values: '0x6 1x3'
+    alert_rule_test:
+      - eval_time: 25s
+        alertname: FinServeGatewayScrapeUnavailable
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: FinServeGatewayScrapeUnavailable
+        exp_alerts:
+          - exp_labels: {job: finserve, instance: 'gateway:8000', severity: critical}
+            exp_annotations:
+              summary: Gateway metrics endpoint is unavailable
+              runbook: docs/runbooks/queue-saturation.md
+      - eval_time: 35s
+        alertname: FinServeGatewayScrapeUnavailable
+        exp_alerts: []
+  - name: A bad instance cannot hide behind successful traffic on another instance
+    interval: 5s
+    input_series:
+      - series: 'finserve_requests_total{job="finserve",instance="bad",outcome="engine_failed"}'
+        values: '0+2x60'
+      - series: 'finserve_requests_total{job="finserve",instance="bad",outcome="success"}'
+        values: '0+8x60'
+      - series: 'finserve_requests_total{job="finserve",instance="good",outcome="success"}'
+        values: '0+1000x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: FinServeEngineFailureRatio
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: FinServeEngineFailureRatio
+        exp_alerts:
+          - exp_labels: {job: finserve, instance: bad, severity: warning}
+            exp_annotations:
+              summary: Engine timeout failure or quota-store unavailability exceeds five percent
+              runbook: docs/runbooks/gpu-oom.md
+  - name: Idle counters and sparse failures do not satisfy the traffic floor
+    interval: 5s
+    input_series:
+      - series: 'finserve_requests_total{job="finserve",instance="sparse",outcome="timeout"}'
+        values: '0+0.1x60'
+      - series: 'finserve_requests_total{job="finserve",instance="idle",outcome="overloaded"}'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: FinServeEngineFailureRatio
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: FinServeAdmissionRejected
+        exp_alerts: []
+  - name: Admission rejection is distinct from ordinary quota rejection and cancellation
+    interval: 5s
+    input_series:
+      - series: 'finserve_requests_total{job="finserve",instance="busy",outcome="overloaded"}'
+        values: '0+3x60'
+      - series: 'finserve_requests_total{job="finserve",instance="busy",outcome="success"}'
+        values: '0+7x60'
+      - series: 'finserve_requests_total{job="finserve",instance="quota",outcome="rate_limited"}'
+        values: '0+10x60'
+      - series: 'finserve_requests_total{job="finserve",instance="cancelled",outcome="cancelled"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: FinServeAdmissionRejected
+        exp_alerts:
+          - exp_labels: {job: finserve, instance: busy, severity: warning}
+            exp_annotations:
+              summary: Gateway admission rejects more than ten percent of counted requests
+              runbook: docs/runbooks/queue-saturation.md
+      - eval_time: 3m
+        alertname: FinServeEngineFailureRatio
+        exp_alerts: []
+  - name: Histogram latency alerts require sustained latency and enough observed content
+    interval: 5s
+    input_series:
+      - series: 'finserve_server_ttft_seconds_bucket{job="finserve",instance="slow",le="1"}'
+        values: '0x60'
+      - series: 'finserve_server_ttft_seconds_bucket{job="finserve",instance="slow",le="2.5"}'
+        values: '0+10x60'
+      - series: 'finserve_server_ttft_seconds_bucket{job="finserve",instance="slow",le="+Inf"}'
+        values: '0+10x60'
+      - series: 'finserve_server_ttft_seconds_count{job="finserve",instance="slow"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: FinServeTTFTP95High
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: FinServeTTFTP95High
+        exp_alerts:
+          - exp_labels: {job: finserve, instance: slow, severity: warning}
+            exp_annotations:
+              summary: Approximate server TTFT p95 exceeds one second
+              runbook: docs/runbooks/queue-saturation.md

@@ -1,22 +1,29 @@
 # Explicit opt-in override keeps monitoring credentials out of the base fixture requirements.
 services:
   prometheus:
-    image: prom/prometheus:v3.5.0
+    image: quay.io/prometheus/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
     ports: ["127.0.0.1:9097:9090"]
     volumes:
       - ../../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../monitoring/finserve-alerts.yml:/etc/prometheus/finserve-alerts.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=24h
+      - --storage.tsdb.retention.size=256MB
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     cpus: 0.5
     mem_limit: 256m
   grafana:
-    image: grafana/grafana:12.1.0
+    image: grafana/grafana:12.1.0@sha256:6ac590e7cabc2fbe8d7b8fc1ce9c9f0582177b334e0df9c927ebd9670469440f
     ports: ["127.0.0.1:3007:3000"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set a private Grafana password}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ../../monitoring/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/finserve.yaml:ro
+      - ../../monitoring/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/finserve.yaml:ro
+      - ../../monitoring/dashboards:/etc/grafana/finserve-dashboards:ro
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     cpus: 0.5
