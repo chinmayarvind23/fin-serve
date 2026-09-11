@@ -12,12 +12,18 @@ from typing import Self
 import httpx
 from pydantic import Field, model_validator
 
-from finserve.contracts.deployment import HealthObservation, ImmutableModel, Revision
+from finserve.contracts.deployment import (
+    DeploymentState,
+    HealthObservation,
+    ImmutableModel,
+    Revision,
+)
 from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.engines.openai_adapter import CompletionState, sse_events
 from finserve.http_ownership import HTTPClosureError, own_response
 from finserve.registry.model_assets import owned_disk
-from finserve.reliability.rollback import ApplyRequest, ControlConflict
+from finserve.reliability.promotion import PromotionDecision
+from finserve.reliability.rollback import ApplyRequest, ControlConflict, DeploymentStore
 
 
 class BackendConfiguration(ImmutableModel):
@@ -244,6 +250,60 @@ class WarmRouteStore:
                 "INSERT INTO warm_actions VALUES(?,?,?)",
                 (request.idempotency_key, fingerprint, updated.model_dump_json()),
             )
+            return updated
+
+    def acknowledge_candidate(
+        self,
+        control: DeploymentStore,
+        request: ApplyRequest,
+        decision: PromotionDecision,
+        health: HealthObservation,
+    ) -> DeploymentState:
+        """Fence route writers while acknowledging the exact persisted lifecycle action.
+
+        Lock order is route then control. No network work runs under either lock. A crash
+        after control commit replays its activation receipt without advancing generation again.
+        """
+        if control.path == self.path:
+            raise ValueError("route and control stores require separate database files")
+        fingerprint = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+        with self.transaction() as connection:
+            action: tuple[str, str] | None = connection.execute(
+                "SELECT fingerprint,payload FROM warm_actions WHERE id=?",
+                (request.idempotency_key,),
+            ).fetchone()
+            route = self._snapshot(connection, request.deployment_id)
+            if (
+                action is None
+                or action[0] != fingerprint
+                or RouteSnapshot.model_validate_json(action[1]) != route
+                or route.revision_id != request.target.revision_id
+                or route.revision_digest != request.target.digest()
+                or route.generation != request.expected_generation + 1
+                or decision.candidate_revision != request.target.revision_id
+                or decision.candidate_digest != request.target.digest()
+                or not health.verifies(request.target)
+            ):
+                raise ControlConflict("activation acknowledgment differs from current route action")
+            current = control.deployment(request.deployment_id)
+            if current.rollback_id is not None or (
+                (current.generation, current.active_revision)
+                not in {
+                    (request.expected_generation, request.expected_revision),
+                    (route.generation, route.revision_id),
+                }
+            ):
+                raise ControlConflict(
+                    "activation acknowledgment differs from controller generation"
+                )
+            updated = control.activate_candidate(
+                request.deployment_id, request.expected_generation, decision, health
+            )
+            if (
+                updated.generation != route.generation
+                or updated.active_revision != route.revision_id
+            ):
+                raise ControlConflict("activation acknowledgment no longer names current traffic")
             return updated
 
     def history(self, deployment_id: str) -> list[RouteSnapshot]:

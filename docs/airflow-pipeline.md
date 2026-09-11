@@ -39,7 +39,7 @@ It exits 0 for approval, 2 for rejection and 3 for invalid evidence. The manual 
 
 Deployment loads the server-configured `FINSERVE_DEPLOYMENT_ADAPTER` factory and recomputes the gate before invoking it. Lifecycle leases, immutable request identities and adapter idempotency govern retries. Uncertain external action is reconciled through exact-revision health rather than blindly repeated. A decision supplied by an arbitrary caller is not an authorization capability.
 
-The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images, start pods or acknowledge the separate rollback controller automatically. The trusted integration must coordinate controller acknowledgment and probation. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
+The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images or start pods. After lifecycle promotion, `release_activation.acknowledge_release` recomputes the canonical gate, verifies the recorded lifecycle decision, probes current traffic and records the exact activation in the rollback controller. It requires the persisted lifecycle route-action receipt and holds the route write lock during controller acknowledgment. Repeating it does not increment the generation again. The previous known-good revision remains unchanged. Wiring this call and probation into the full producer DAG remains pending. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
 
 ## Producer integration still to complete
 

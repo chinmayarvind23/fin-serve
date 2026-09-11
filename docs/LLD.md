@@ -63,6 +63,15 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+Canonical activation acknowledgment is a separate step after lifecycle promotion. It
+recomputes the gate, requires the same decision recorded by the promoted lifecycle job, and
+performs a fresh warm-route health probe. Under the route store's write transaction it checks
+the lifecycle action fingerprint and exact current revision/generation, then calls the control
+store's idempotent activation method. Lock order is route then control; the stores use separate
+SQLite files and network calls happen before locking. This prevents a concurrent route change
+from interleaving with acknowledgment. Known-good remains the previous revision until explicit
+probation approval. Failed or unacknowledged activation is still a reconciliation case.
+
 Managed release registration begins with a completed immutable plan stage. Its inputs freeze
 policy and both cohort specifications before collection. Registration checks every historical
 collection attempt's start time and both retained pre-collection runtime observations against

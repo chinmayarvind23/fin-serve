@@ -1,5 +1,14 @@
 # Runbook: Rollback
 
+For a canonical lifecycle deployment, call `release_activation.acknowledge_release` after the
+lifecycle reaches `promoted`. It rechecks gate evidence and fresh traffic health, then requires
+the exact lifecycle route-action receipt before updating the controller's active revision.
+Use separate route and control SQLite files. The acknowledgment locks route writes before
+controller writes; no network operation runs under either lock. A crash after the control
+commit can replay the same activation. A superseded route or unhealthy candidate fails
+acknowledgment and leaves known-good unchanged. Failed or incomplete lifecycle activation
+still requires reconciliation; this API does not automatically restore an unacknowledged route.
+
 Use the trusted lifecycle controller and configured deployment adapter. There is no public HTTP rollback endpoint. The controller must already know the candidate, known-good revision, deployment generation and immutable evidence identities.
 
 1. Retain the regression signal and its detection time. Stop further promotion for that deployment.
