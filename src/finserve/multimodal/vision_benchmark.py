@@ -74,7 +74,7 @@ def repository_state() -> dict[str, object]:
         check=True,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=30,
     ).stdout.strip()
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -82,7 +82,7 @@ def repository_state() -> dict[str, object]:
         check=True,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=30,
     ).stdout
     return {
         "git_revision": head,
