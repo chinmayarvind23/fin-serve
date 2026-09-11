@@ -13,6 +13,7 @@ import httpx
 from pydantic import Field, model_validator
 
 from finserve.contracts.deployment import HealthObservation, ImmutableModel, Revision
+from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.engines.openai_adapter import CompletionState, sse_events
 from finserve.reliability.rollback import ApplyRequest, ControlConflict
 
@@ -51,11 +52,20 @@ class WarmBackend(ImmutableModel):
 
     revision: Revision
     configuration: BackendConfiguration
+    serving_profile: ServingProfileV1 | None = None
 
     @model_validator(mode="after")
     def configuration_matches(self) -> Self:
         """A caller cannot label an unrelated endpoint with an otherwise valid revision."""
-        if self.revision.config_digest != self.configuration.digest():
+        if self.serving_profile is not None:
+            self.serving_profile.verify_revision(self.revision)
+            if (
+                self.serving_profile.base_url != self.configuration.base_url
+                or self.serving_profile.served_model != self.configuration.model
+                or self.serving_profile.credential_env != self.configuration.credential_env
+            ):
+                raise ValueError("warm endpoint differs from canonical serving profile")
+        elif self.revision.config_digest != self.configuration.digest():
             raise ValueError("revision configuration digest does not bind the backend")
         return self
 

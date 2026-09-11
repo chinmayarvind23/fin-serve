@@ -4,12 +4,15 @@ import asyncio
 import importlib
 import os
 from pathlib import Path
-from typing import cast
+from typing import Self, cast
+
+from pydantic import model_validator
 
 from finserve.contracts.deployment import ImmutableModel, Revision
 from finserve.registry.artifacts import LocalArtifactStore
 from finserve.registry.lifecycle import LifecycleService, LifecycleSpec
 from finserve.registry.metadata import Registry
+from finserve.registry.release_gate import GateRequest, evaluate_gate, freeze_gate_request
 from finserve.reliability.promotion import PromotionPolicy
 from finserve.reliability.rollback import DeploymentAdapter
 
@@ -29,6 +32,15 @@ class PipelineRequest(ImmutableModel):
     baseline_revision: Revision
     target_revision: Revision
     policy: PromotionPolicy
+    baseline_profile_file: Path | None = None
+    candidate_profile_file: Path | None = None
+
+    @model_validator(mode="after")
+    def complete_profile_pair(self) -> Self:
+        """Reject partial canonical requests before any durable run or job registration."""
+        if (self.baseline_profile_file is None) != (self.candidate_profile_file is None):
+            raise ValueError("both canonical profile files are required")
+        return self
 
 
 def runtime() -> tuple[Registry, LocalArtifactStore]:
@@ -64,15 +76,29 @@ def register_stage() -> str:
             suite=artifacts.put(request.suite_file.read_bytes()),
             policy=request.policy,
             target=request.target_revision,
+            gate_mode=(
+                "canonical-profile-v1"
+                if request.baseline_profile_file is not None
+                else "legacy-drill"
+            ),
         )
         registry.create_job(spec.job_id, spec.canonical())
+        if request.baseline_profile_file is not None and request.candidate_profile_file is not None:
+            freeze_gate_request(
+                registry,
+                GateRequest(
+                    job_id=spec.job_id,
+                    baseline_profile=artifacts.put(request.baseline_profile_file.read_bytes()),
+                    candidate_profile=artifacts.put(request.candidate_profile_file.read_bytes()),
+                ),
+            )
         return spec.job_id
     finally:
         registry.close()
 
 
 def evaluate_stage(job_id: str) -> str:
-    """Recompute gates from registered bytes; rejected jobs fail the task before deployment."""
+    """Legacy evidence-drill entry point; the release DAG uses evaluate_release_stage instead."""
     registry, artifacts = runtime()
     try:
         specification = LifecycleSpec.model_validate_json(registry.specification(job_id))
@@ -86,16 +112,39 @@ def evaluate_stage(job_id: str) -> str:
         registry.close()
 
 
-def deploy_stage(job_id: str) -> str:
+def evaluate_release_stage(job_id: str) -> str:
+    """Use the same persisted profile-aware outcome and rejection behavior as the CI command."""
+    registry, artifacts = runtime()
+    try:
+        outcome = evaluate_gate(registry, artifacts, job_id)
+        if outcome.status != "approved":
+            raise RuntimeError("canonical release evidence did not pass")
+        return job_id
+    finally:
+        registry.close()
+
+
+def deploy_release_stage(job_id: str) -> str:
+    """Revalidate release evidence immediately before invoking any deployment callback."""
+    return deploy_stage(job_id, require_profile=True)
+
+
+def deploy_stage(job_id: str, *, require_profile: bool = False) -> str:
     """Load a server-configured adapter and rely on durable lifecycle reconciliation across
     retries.
     """
-    module_name, factory_name = os.environ["FINSERVE_DEPLOYMENT_ADAPTER"].split(":", maxsplit=1)
-    factory = getattr(importlib.import_module(module_name), factory_name)
-    adapter = cast(DeploymentAdapter, factory())
     registry, artifacts = runtime()
     try:
         specification = LifecycleSpec.model_validate_json(registry.specification(job_id))
+        has_profile = specification.gate_mode == "canonical-profile-v1"
+        # Existing drill entry points cannot bypass a canonical job's release gate.
+        if require_profile or has_profile:
+            outcome = evaluate_gate(registry, artifacts, job_id)
+            if outcome.status != "approved":
+                raise RuntimeError("canonical release evidence did not pass")
+        module_name, factory_name = os.environ["FINSERVE_DEPLOYMENT_ADAPTER"].split(":", maxsplit=1)
+        factory = getattr(importlib.import_module(module_name), factory_name)
+        adapter = cast(DeploymentAdapter, factory())
         state = asyncio.run(LifecycleService(registry, artifacts).run(specification, adapter))
         if state.status != "promoted":
             raise RuntimeError("lifecycle deployment is not verified healthy")

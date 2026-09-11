@@ -5,6 +5,7 @@ orchestration.
 import asyncio
 import tempfile
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import Field
@@ -38,11 +39,16 @@ class LifecycleSpec(ImmutableModel):
     suite: ArtifactRef
     policy: PromotionPolicy = Field(default_factory=PromotionPolicy)
     target: Revision
+    gate_mode: Literal["legacy-drill", "canonical-profile-v1"] = "legacy-drill"
 
     def canonical(self) -> str:
         """Normalize typed defaults so task JSON round-trips preserve specification identity."""
         normalized = LifecycleSpec.model_validate_json(self.model_dump_json())
-        return canonical_json(normalized.model_dump())
+        payload = normalized.model_dump()
+        # Preserve immutable historical drill bytes; new releases explicitly freeze their mode.
+        if normalized.gate_mode == "legacy-drill":
+            payload.pop("gate_mode")
+        return canonical_json(payload)
 
 
 def materialize(bundle: RunBundle, store: ArtifactStore, directory: Path) -> None:
@@ -71,6 +77,14 @@ class LifecycleService:
 
     def _decision(self, specification: LifecycleSpec) -> str:
         """Materialize verified bytes and recompute all gates before any new deployment attempt."""
+        if specification.gate_mode == "canonical-profile-v1":
+            # Defer import because the shared gate uses this module's artifact materializer.
+            from finserve.registry.release_gate import evaluate_gate
+
+            outcome = evaluate_gate(self.registry, self.artifacts, specification.job_id)
+            if outcome.status == "invalid_evidence" or outcome.decision_digest is None:
+                raise ValueError("canonical profile evidence is unavailable")
+            return outcome.decision_digest
         baseline = self.registry.run(specification.baseline_run_id)
         candidate = self.registry.run(specification.candidate_run_id)
         if baseline.revision_id != specification.expected_revision:

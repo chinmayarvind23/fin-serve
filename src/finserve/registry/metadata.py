@@ -96,6 +96,21 @@ events = Table(
     Column[float]("observed_at", Float, nullable=False),
     Column("payload", Text, nullable=False),
 )
+gate_inputs = Table(
+    "finserve_release_gate_inputs",
+    schema,
+    Column("id", String(128), ForeignKey(jobs.c.id), primary_key=True),
+    Column("digest", String(64), nullable=False),
+    Column("payload", Text, nullable=False),
+)
+gate_outcomes = Table(
+    "finserve_release_gate_outcomes",
+    schema,
+    Column("id", String(64), primary_key=True),
+    Column("job_id", String(128), ForeignKey(jobs.c.id), nullable=False),
+    Column("digest", String(64), nullable=False),
+    Column("payload", Text, nullable=False),
+)
 
 
 class RegistryConflict(RuntimeError):
@@ -335,6 +350,24 @@ class Registry:
         """A lifecycle consumes a server-generated recorded decision, not a client passed flag."""
         return PromotionDecision.model_validate_json(self._payload(decisions, identity))
 
+    def freeze_gate_input(self, job_id: str, payload: str) -> None:
+        """A retry cannot replace the canonical profiles associated with an existing job."""
+        self._immutable(gate_inputs, job_id, payload)
+
+    def gate_input(self, job_id: str) -> str:
+        """Resolve server-owned gate inputs; callers cannot supply a passing result."""
+        return self._payload(gate_inputs, job_id)
+
+    def record_gate_outcome(self, job_id: str, payload: str) -> str:
+        """Retain invalid and rejected attempts as well as successful evidence checks."""
+        identity = digest_text(payload)
+        self._immutable(gate_outcomes, identity, payload, job_id=job_id)
+        return identity
+
+    def gate_outcome(self, identity: str) -> str:
+        """Read an immutable outcome by its content identity for CLI and Airflow consumers."""
+        return self._payload(gate_outcomes, identity)
+
     def create_job(self, job_id: str, specification: str) -> LifecycleState:
         """The same job ID cannot be retried with a different image, suite, policy or run bundle."""
         state = LifecycleState(job_id=job_id)
@@ -368,7 +401,11 @@ class Registry:
     def specification(self, job_id: str) -> str:
         """Tasks exchange only job IDs; immutable specifications stay in durable registry truth."""
         with self.engine.connect() as connection:
-            value = connection.execute(select(jobs.c.spec).where(jobs.c.id == job_id)).scalar_one()
+            value = connection.execute(
+                select(jobs.c.spec).where(jobs.c.id == job_id)
+            ).scalar_one_or_none()
+        if value is None:
+            raise KeyError("lifecycle specification not found")
         return str(value)
 
     def history(self, job_id: str) -> list[LifecycleState]:

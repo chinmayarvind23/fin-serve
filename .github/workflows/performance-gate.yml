@@ -1,0 +1,47 @@
+name: Canonical performance evidence gate
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Immutable registered job ID on the trusted evidence runner
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: finserve-evidence-gate
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    # Never execute untrusted PR code on a runner that can read private measurement artifacts.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: [self-hosted, finserve-evidence]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.4"
+      - run: uv sync --frozen --extra registry
+      - name: Recompute the frozen evidence gate
+        env:
+          FINSERVE_GATE_JOB: ${{ inputs.job_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FINSERVE_REGISTRY_URL:?Configure trusted registry access on this runner}"
+          : "${FINSERVE_ARTIFACT_ROOT:?Configure the original artifact namespace on this runner}"
+          uv run --no-sync python -m finserve.registry.release_gate \
+            --job-id "$FINSERVE_GATE_JOB" \
+            --output "$RUNNER_TEMP/finserve-gate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+      # Raw prompts, private endpoint profiles and credentials are not uploaded by this workflow.
+      - name: Retain gate outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-outcome
+          path: ${{ runner.temp }}/finserve-gate-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 30
