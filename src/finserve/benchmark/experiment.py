@@ -7,10 +7,8 @@ import subprocess
 import time
 from pathlib import Path
 
-import httpx
-
 from finserve.benchmark.gpu import TelemetrySample, aggregate, collect
-from finserve.benchmark.runner import RunConfig, run_benchmark, write_json
+from finserve.benchmark.runner import RunConfig, benchmark_client, run_benchmark, write_json
 from finserve.benchmark.workload import Workload
 
 
@@ -91,9 +89,7 @@ async def experiment(
 
     async def benchmark() -> dict[str, object]:
         """One pool is owned by the measured task, including its cancellation path."""
-        async with httpx.AsyncClient(
-            limits=httpx.Limits(max_connections=config.concurrency), trust_env=False
-        ) as client:
+        async with benchmark_client(config) as client:
             return await run_benchmark(client, url, workload, config, output / "run")
 
     measured = asyncio.create_task(benchmark())

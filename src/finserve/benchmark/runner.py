@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import platform
 import time
 from collections.abc import AsyncIterator, Callable
@@ -38,6 +39,22 @@ class RunConfig(BaseModel):
     image_digest: str = Field(default="undeclared", min_length=1)
     config_digest: str = Field(default="undeclared", min_length=1)
     cache_policy: str = "engine-default; warmup may populate caches"
+
+
+def benchmark_client(config: RunConfig) -> httpx.AsyncClient:
+    """Resolve optional bearer auth in memory without changing benchmark artifact identities."""
+    key = os.getenv("FINSERVE_API_KEY")
+    headers: dict[str, str] = {}
+    if key:
+        if len(key) > 4096 or any(ord(character) < 32 or ord(character) > 126 for character in key):
+            raise ValueError("Invalid benchmark API credential")
+        headers["Authorization"] = "Bearer " + key
+    return httpx.AsyncClient(
+        headers=headers,
+        limits=httpx.Limits(max_connections=config.concurrency),
+        trust_env=False,
+        follow_redirects=False,
+    )
 
 
 class Choice(BaseModel):
@@ -538,9 +555,7 @@ def main() -> None:
 
     async def execute() -> None:
         """One pooled client bounds connection reuse to the declared concurrency."""
-        async with httpx.AsyncClient(
-            limits=httpx.Limits(max_connections=config.concurrency)
-        ) as client:
+        async with benchmark_client(config) as client:
             result = await run_benchmark(client, args.url, workload, config, args.output)
             print(json.dumps(result, indent=2, allow_nan=False))
 
