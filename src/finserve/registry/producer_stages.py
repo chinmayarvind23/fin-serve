@@ -129,7 +129,7 @@ class ProducerStages:
         )
         return after
 
-    def start(self, stage_id: str) -> StageState:
+    def start(self, stage_id: str, *, attempt_id: str | None = None) -> StageState:
         """Only planned or explicitly failed work starts; elapsed time cannot resolve ambiguity."""
         # Artifact access can reach S3; verify immutable input outside a database transaction.
         self.artifacts.get(self.state(stage_id).input)
@@ -139,13 +139,22 @@ class ProducerStages:
                 raise RegistryConflict(
                     "running or completed producer stage requires reconciliation"
                 )
+            if attempt_id is not None:
+                prior = connection.execute(
+                    select(events.c.payload).where(events.c.stage_id == stage_id)
+                ).scalars()
+                if any(
+                    StageState.model_validate_json(value).attempt_id == attempt_id
+                    for value in prior
+                ):
+                    raise RegistryConflict("producer attempt identity cannot be reused")
             after = StageState(
                 stage_id=stage_id,
                 input=before.input,
                 status="running",
                 version=before.version + 1,
                 attempt_number=before.attempt_number + 1,
-                attempt_id=uuid4().hex,
+                attempt_id=attempt_id if attempt_id is not None else uuid4().hex,
                 started_at=self.clock(),
             )
             return self._save(connection, before, after)

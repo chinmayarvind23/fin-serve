@@ -22,6 +22,7 @@ class QualityCollectionSpec(ImmutableModel):
     configuration: RunConfig
     max_tokens: int = Field(default=128, ge=1, le=2048, strict=True)
     maximum_raw_bytes: int = Field(default=64 * 1024**2, ge=1024, le=64 * 1024**2, strict=True)
+    timeout_seconds: float = Field(default=300.0, gt=0, le=3600)
 
     @model_validator(mode="after")
     def coherent_runtime(self) -> Self:
@@ -46,7 +47,8 @@ class QualityCollectionSpec(ImmutableModel):
 
     def canonical(self) -> str:
         """Stable bytes freeze suite, mapping and runtime identities for durable stage receipts."""
-        return json.dumps(self.model_dump(), sort_keys=True, separators=(",", ":"))
+        validated = QualityCollectionSpec.model_validate_json(self.model_dump_json())
+        return json.dumps(validated.model_dump(), sort_keys=True, separators=(",", ":"))
 
     def digest(self) -> str:
         """A repeated collection ID cannot silently acquire changed prompts or runtime settings."""

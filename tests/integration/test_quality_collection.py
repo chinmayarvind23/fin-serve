@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from finserve.registry.quality_collection import (
     bounded_file,
     collect_quality,
     load_quality_collection,
+    write_json,
 )
 
 
@@ -232,3 +234,75 @@ def test_collection_suite_budget() -> None:
     value["suite"]["cases"][0]["prompt"] = "a" * 1024**2
     with pytest.raises(ValueError, match="budget"):
         QualityCollectionSpec.model_validate(value)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf"), 3601])
+def test_collection_timeout_is_finite_and_bounded(timeout: float) -> None:
+    """The overall producer deadline cannot be disabled with invalid numeric input."""
+    value = specification().model_dump()
+    value["timeout_seconds"] = timeout
+    with pytest.raises(ValueError):
+        QualityCollectionSpec.model_validate(value)
+
+
+def test_default_collection_canonical_roundtrip() -> None:
+    """Nested unvalidated numeric defaults cannot change an immutable digest after JSON reload."""
+    original = specification()
+    loaded = QualityCollectionSpec.model_validate_json(original.model_dump_json())
+    assert original.canonical() == loaded.canonical()
+    assert original.digest() == loaded.digest()
+
+
+async def test_collection_overall_deadline_preserves_partial_row(tmp_path: Path) -> None:
+    """A whole-stage timeout persists its active response and records failure, not cancellation."""
+
+    class Stream(httpx.AsyncByteStream):
+        """Keep a request open beyond the frozen collection deadline."""
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            """Emit real content before the overall deadline interrupts this request."""
+            yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
+            await asyncio.Event().wait()
+
+    spec = specification().model_copy(update={"timeout_seconds": 0.05})
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=Stream()))
+    ) as client:
+        with pytest.raises(TimeoutError):
+            await collect_quality(client, spec, tmp_path / "deadline")
+    result = json.loads((tmp_path / "deadline/result.json").read_text())
+    row = json.loads((tmp_path / "deadline/requests.jsonl").read_text())
+    assert result["status"] == "failed" and result["recorded"] == 1
+    assert row["response"]["output"] == "partial"
+    assert not row["response"]["success"]
+
+
+async def test_deadline_during_terminal_disk_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Native I/O can outlive a deadline, but cannot retain completed evidence afterward."""
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked(path: Path, value: object) -> None:
+        """Block only the first terminal result write while the event loop observes its deadline."""
+        if path.name == "result.json" and not entered.is_set():
+            entered.set()
+            assert release.wait(3)
+        write_json(path, value)
+
+    monkeypatch.setattr("finserve.registry.quality_collection.write_json", blocked)
+    spec = specification().model_copy(update={"timeout_seconds": 0.2})
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(503))
+    ) as client:
+        task = asyncio.create_task(collect_quality(client, spec, tmp_path / "slow-disk"))
+        assert await asyncio.to_thread(entered.wait, 2)
+        await asyncio.sleep(0.25)
+        assert not task.done()
+        release.set()
+        with pytest.raises(TimeoutError):
+            await task
+    result = json.loads((tmp_path / "slow-disk/result.json").read_text())
+    assert result["status"] == "failed" and result["recorded"] == 3
+    with pytest.raises(ValueError, match="completion"):
+        load_quality_collection(tmp_path / "slow-disk")

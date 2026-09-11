@@ -16,6 +16,8 @@ from finserve.benchmark.workload import WorkItem
 from finserve.contracts.deployment import ImmutableModel
 from finserve.contracts.producer import QualityCollectionSpec
 from finserve.evaluation.quality import unique_object
+from finserve.http_ownership import HTTPClosureError
+from finserve.registry.model_assets import owned_disk
 
 
 class QualityCollectionResult(ImmutableModel):
@@ -46,13 +48,32 @@ class QualityCollectionResult(ImmutableModel):
 async def collect_quality(
     client: httpx.AsyncClient, specification: QualityCollectionSpec, output: Path
 ) -> QualityCollectionResult:
+    """Deadline failures retain active rows; owned disk and HTTP cleanup drain before returning."""
+    specification = QualityCollectionSpec.model_validate_json(specification.model_dump_json())
+    async with asyncio.timeout(specification.timeout_seconds) as deadline:
+        return await _collect_quality(client, specification, output, deadline)
+
+
+async def _collect_quality(
+    client: httpx.AsyncClient,
+    specification: QualityCollectionSpec,
+    output: Path,
+    deadline: asyncio.Timeout,
+) -> QualityCollectionResult:
     """Record each response before inspecting it; cancellation preserves partial raw evidence."""
     specification = QualityCollectionSpec.model_validate_json(specification.model_dump_json())
-    output = prepare_output(output)
-    (output / "specification.json").write_text(specification.canonical(), encoding="utf-8")
-    write_json(
-        output / "status.json", {"status": "running", "specification": specification.digest()}
-    )
+
+    def prepare() -> Path:
+        """Freeze inputs in an owned worker before any network request is offered."""
+        directory = prepare_output(output)
+        (directory / "specification.json").write_text(specification.canonical(), encoding="utf-8")
+        write_json(
+            directory / "status.json",
+            {"status": "running", "specification": specification.digest()},
+        )
+        return directory
+
+    output = await owned_disk(prepare)
     outputs: dict[str, str] = {}
     count = 0
     status: Literal["completed", "interrupted", "failed"] = "failed"
@@ -85,21 +106,33 @@ async def collect_quality(
                     )
                     + "\n"
                 ).encode()
-                raw.write(encoded)
-                raw.flush()
-                raw_digest.update(encoded)
-                count += 1
-                if row.success:
-                    outputs[case.case_id] = row.output
+
+                def append(encoded: bytes = encoded, row: RequestRecord = row) -> None:
+                    """Drain a row write before its file handle can close or staging can unwind."""
+                    nonlocal count
+                    raw.write(encoded)
+                    raw.flush()
+                    raw_digest.update(encoded)
+                    count += 1
+                    if row.success:
+                        outputs[row.case_id] = row.output
+
+                await owned_disk(append)
+                if row.error == "HTTPClosureError":
+                    raise HTTPClosureError("local HTTP cleanup remains unresolved")
                 # Retain the crossing record, then stop offering work. Overshoot is bounded
                 # by one recorder event/output limit; an oversized collection cannot qualify.
                 if raw.tell() > specification.maximum_raw_bytes:
                     raise ValueError("quality collection exceeded raw evidence byte budget")
                 if row.error == "CancelledError":
                     raise asyncio.CancelledError
+        expires = deadline.when()
+        assert expires is not None
+        if asyncio.get_running_loop().time() >= expires:
+            raise TimeoutError("quality collection deadline expired")
         status = "completed"
     except asyncio.CancelledError:
-        status = "interrupted"
+        status = "failed" if deadline.expired() else "interrupted"
         raise
     finally:
         result = QualityCollectionResult(
@@ -113,10 +146,28 @@ async def collect_quality(
             successful=len(outputs),
             outputs=outputs,
         )
-        write_json(output / "result.json", result.model_dump())
-        write_json(
-            output / "status.json", {"status": status, "specification": specification.digest()}
-        )
+
+        def publish() -> None:
+            """Keep terminal evidence publication owned even when native disk work outlives time."""
+            write_json(output / "result.json", result.model_dump())
+            write_json(
+                output / "status.json", {"status": status, "specification": specification.digest()}
+            )
+
+        try:
+            await owned_disk(publish)
+        except asyncio.CancelledError:
+            status = "failed" if deadline.expired() else "interrupted"
+            result = result.model_copy(update={"status": status})
+            await owned_disk(publish)
+            raise
+        expires = deadline.when()
+        assert expires is not None
+        if status == "completed" and asyncio.get_running_loop().time() >= expires:
+            status = "failed"
+            result = result.model_copy(update={"status": status})
+            await owned_disk(publish)
+            raise TimeoutError("quality publication exceeded deadline")
     return result
 
 

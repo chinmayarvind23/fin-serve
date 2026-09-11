@@ -26,6 +26,7 @@ from pydantic import (
 
 from finserve.benchmark.metrics import RequestRecord, summarize
 from finserve.benchmark.workload import WorkItem, Workload, default_workload
+from finserve.http_ownership import HTTPClosureError, own_response
 
 
 class RunConfig(BaseModel):
@@ -262,10 +263,11 @@ async def request_one(
                 json=request_payload(item, config),
                 timeout=config.timeout_s,
             ) as response:
+                own_response(response)
                 state.status_code = response.status_code
                 response.raise_for_status()
                 await consume_stream(response, state)
-    except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+    except (httpx.HTTPError, TimeoutError, ValueError, HTTPClosureError) as exc:
         # Keep bounded failure labels; server bodies may include private prompt content.
         error = type(exc).__name__
     except asyncio.CancelledError:

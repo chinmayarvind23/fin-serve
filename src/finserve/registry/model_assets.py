@@ -21,6 +21,7 @@ from finserve.contracts.model_assets import (
     VerifiedFile,
     safe_asset_path,
 )
+from finserve.http_ownership import own_response
 
 CHUNK_BYTES = 1024 * 1024
 MANIFEST_NAME = "finserve-model-manifest.json"
@@ -112,6 +113,7 @@ async def plan_hub_snapshot(
             params={"blobs": "true"},
             follow_redirects=False,
         ) as response:
+            own_response(response)
             document = json.loads(await bounded_response(response, 2 * CHUNK_BYTES))
     return parse_hub_plan(document, repository, revision, files, maximum_bytes)
 
@@ -201,6 +203,7 @@ async def download_file(
     path.parent.mkdir(parents=True, exist_ok=True)
     url = f"https://huggingface.co/{specification.repository}/resolve/{specification.revision}/{source.path}"
     async with client.stream("GET", url, follow_redirects=True) as response:
+        own_response(response)
         response.raise_for_status()
         size = 0
         with path.open("xb") as output:
