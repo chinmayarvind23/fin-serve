@@ -1,0 +1,37 @@
+{
+  "profile_id": "vllm-qwen2-vl-2b-single-image-eager-v1",
+  "validation_status": "candidate_until_run_manifest_records_startup",
+  "engine_package_version": "0.29.0",
+  "model": "Qwen/Qwen2-VL-2B-Instruct",
+  "model_revision": "895c3a49bc3fa70a340399125c650a463535e71c",
+  "license": "Apache-2.0",
+  "request_api": "chat/completions",
+  "base_url": "http://127.0.0.1:8020/v1",
+  "hardware_target": "one local NVIDIA CUDA GPU with 8 GiB VRAM",
+  "environment": {
+    "HF_HUB_OFFLINE": "1",
+    "VLLM_USE_V2_MODEL_RUNNER": "0",
+    "VLLM_USE_FLASHINFER_SAMPLER": "0"
+  },
+  "launch_argv": [
+    "vllm", "serve", "Qwen/Qwen2-VL-2B-Instruct",
+    "--revision", "895c3a49bc3fa70a340399125c650a463535e71c",
+    "--tokenizer-revision", "895c3a49bc3fa70a340399125c650a463535e71c",
+    "--served-model-name", "Qwen/Qwen2-VL-2B-Instruct",
+    "--host", "127.0.0.1", "--port", "8020",
+    "--dtype", "float16", "--max-model-len", "2048",
+    "--max-num-seqs", "1", "--max-num-batched-tokens", "2048",
+    "--gpu-memory-utilization", "0.85", "--enforce-eager",
+    "--no-enable-prefix-caching", "--generation-config", "vllm",
+    "--limit-mm-per-prompt", "{\"image\":1,\"video\":0}",
+    "--mm-processor-kwargs", "{\"min_pixels\":3136,\"max_pixels\":200704}",
+    "--mm-processor-cache-gb", "0"
+  ],
+  "scope": [
+    "Single inline PNG image and text produce pretrained text output.",
+    "Vision encoding and language decoding share one vLLM process; no encoder disaggregation claim.",
+    "Gateway limits PNG to 1 MiB and 512 pixels per side, then canonicalizes RGB over white.",
+    "This candidate requires actual startup and functional evidence before any hardware-fit claim.",
+    "Only this engine may own the local GPU during its recorded experiment."
+  ]
+}
