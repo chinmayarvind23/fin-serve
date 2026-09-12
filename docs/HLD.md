@@ -48,7 +48,7 @@ The warm deployment adapter changes route truth with an expected revision and ge
 
 ## Infrastructure and current limits
 
-Text clients can explicitly request a bounded output shape through the gateway, Ray and warm vLLM routing. The engine applies constrained decoding, and the adapter checks final syntax before reporting success. Shapes contain requested types and formatting rules, not expected answers; the release quality gate still decides correctness. Transport and CPU grammar checks cover this implementation. A new constraint-aware GPU experiment and its performance evidence remain pending.
+Text clients can explicitly request a bounded output shape through the gateway, Ray and warm vLLM routing. The engine applies constrained decoding, and the adapter checks final syntax before reporting success. Shapes contain requested types and formatting rules, not expected answers; the release quality gate still decides correctness. The first completed constrained GPU run served all 56 requests but failed correctness. Bounded scientific notation, null values and primitive arrays extend the format contract; isolated performance evidence remains pending.
 
 Quality and performance collectors share a frozen map from exact prompt identity to requested output shape. The producer preserves that map while deriving actual runtime identities from model and image receipts. Missing bindings and changed mappings reject collection or comparison. Synthetic integration covers the producer path; the map does not retroactively change earlier measurements or establish that its author selected shapes independently of answers.
 

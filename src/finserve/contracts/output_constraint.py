@@ -5,7 +5,14 @@ import math
 import re
 from typing import Any, Literal, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 MAXIMUM_CONSTRAINED_OUTPUT_BYTES = 131072
 
@@ -24,6 +31,8 @@ def matches_type(value: object, kind: str) -> bool:
     """JSON booleans are not numbers; reject nonfinite values and oversized string values."""
     if kind == "boolean":
         return type(value) is bool
+    if kind == "null":
+        return value is None
     if kind == "string":
         return isinstance(value, str) and len(value) <= 4096
     if kind == "integer":
@@ -36,16 +45,65 @@ class ObjectField(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
-    type: Literal["integer", "number", "string", "boolean"]
+    type: Literal["integer", "number", "string", "boolean", "null", "array"]
+    item_type: Literal["integer", "number", "string", "boolean", "null"] | None = None
+
+    @model_validator(mode="after")
+    def bounded_array(self) -> Self:
+        """Arrays require one scalar type; nested structures and unused options are rejected."""
+        if (self.type == "array") != (self.item_type is not None):
+            raise ValueError("only array fields require item_type")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_scalar_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Keep historical scalar field bytes unchanged when no new array option is supplied."""
+        result = handler(self)
+        if self.item_type is None:
+            result.pop("item_type", None)
+        return result
+
+    def value_schema(self) -> dict[str, object]:
+        """Build a bounded scalar or array schema without values, defaults or answer constants."""
+        result: dict[str, object] = {"type": self.type}
+        if self.type == "string":
+            result["maxLength"] = 4096
+        elif self.type == "array":
+            result.update(
+                maxItems=64,
+                items={
+                    "type": self.item_type,
+                    **({"maxLength": 4096} if self.item_type == "string" else {}),
+                },
+            )
+        return result
+
+    def accepts(self, value: object) -> bool:
+        """Reject nested/oversized arrays and preserve strict scalar type distinctions."""
+        if self.type != "array":
+            return matches_type(value, self.type)
+        if not isinstance(value, list):
+            return False
+        items = cast(list[object], value)
+        return len(items) <= 64 and all(matches_type(item, str(self.item_type)) for item in items)
 
 
 class OutputConstraint(BaseModel):
     """Versioned lexical policy constrains syntax; correctness remains the evaluator's decision."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    kind: Literal["integer", "decimal", "yes_no", "lowercase_word", "json_object"]
+    kind: Literal["integer", "decimal", "scientific", "yes_no", "lowercase_word", "json_object"]
     fields: tuple[ObjectField, ...] = Field(default=(), max_length=16)
     decimal_places: int | None = Field(default=None, ge=0, le=12, strict=True)
+    exponent_digits: int | None = Field(default=None, ge=1, le=4, strict=True)
+
+    @model_serializer(mode="wrap")
+    def preserve_original_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """A new scientific option must not change digests of previously frozen constraints."""
+        result = handler(self)
+        if self.exponent_digits is None:
+            result.pop("exponent_digits", None)
+        return result
 
     @model_validator(mode="after")
     def coherent_shape(self) -> Self:
@@ -54,8 +112,13 @@ class OutputConstraint(BaseModel):
             raise ValueError("only json_object requires fields")
         if len({field.name for field in self.fields}) != len(self.fields):
             raise ValueError("JSON field names must be unique")
-        if self.decimal_places is not None and self.kind != "decimal":
+        if self.decimal_places is not None and self.kind not in {"decimal", "scientific"}:
             raise ValueError("decimal_places requires decimal output")
+        if self.kind == "scientific":
+            if self.decimal_places is None or self.exponent_digits is None:
+                raise ValueError("scientific output requires explicit precision and exponent width")
+        elif self.exponent_digits is not None:
+            raise ValueError("exponent_digits requires scientific output")
         return self
 
     def vllm_parameters(self) -> dict[str, object]:
@@ -68,13 +131,7 @@ class OutputConstraint(BaseModel):
         if self.kind == "yes_no":
             return {"choice": ["yes", "no"]}
         if self.kind == "json_object":
-            properties: dict[str, object] = {
-                field.name: {
-                    "type": field.type,
-                    **({"maxLength": 4096} if field.type == "string" else {}),
-                }
-                for field in self.fields
-            }
+            properties: dict[str, object] = {field.name: field.value_schema() for field in self.fields}
             return {
                 "json": {
                     "type": "object",
@@ -84,7 +141,10 @@ class OutputConstraint(BaseModel):
                 }
             }
         integer = r"(0|-?[1-9][0-9]{0,127})"
-        if self.kind == "integer" or self.decimal_places == 0:
+        if self.kind == "scientific":
+            fraction = rf"\.[0-9]{{{self.decimal_places}}}" if self.decimal_places else ""
+            pattern = rf"-?[0-9]{fraction}e[+-][0-9]{{{self.exponent_digits}}}"
+        elif self.kind == "integer" or self.decimal_places == 0:
             pattern = integer
         elif self.kind == "lowercase_word":
             pattern = r"[a-z]{1,64}"
@@ -114,5 +174,5 @@ class OutputConstraint(BaseModel):
             return False
         fields = cast(dict[str, object], value)
         return set(fields) == {field.name for field in self.fields} and all(
-            matches_type(fields[field.name], field.type) for field in self.fields
+            field.accepts(fields[field.name]) for field in self.fields
         )
