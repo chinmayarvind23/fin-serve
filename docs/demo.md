@@ -12,13 +12,23 @@ The [repository GIF](assets/explorer-demo.gif) samples the reviewed desktop reco
 
 Workspace-only links, outside a clean repository clone: [desktop video](../../resources/fin_serve/evidence/explorer-demo-02/walkthrough-1440.webm), [mobile video](../../resources/fin_serve/evidence/explorer-demo-02/walkthrough-390.webm), [recording manifest](../../resources/fin_serve/evidence/explorer-demo-02/recording-manifest.json), and [GIF conversion manifest](../../resources/fin_serve/evidence/explorer-demo-02/gif-manifest.json). The full private GIF master is retained beside these files. The GIF has not been added to the Hugging Face publication bundle.
 
-The remaining full-demo sequence is still pending:
+Two additional private recordings now cover durable visual execution and warm-route recovery:
+
+| Capture | Verified behavior | Scope |
+| --- | --- | --- |
+| [CPU visual job](../../resources/fin_serve/evidence/visual-cpu-demo-04/actual-cpu-job.webm), 10.28 seconds | Actual HTTP submission, queued/running/succeeded states, real gRPC JAX worker, SHA256-verified PNG, idempotent replay and durable SQLite state after shutdown | Private visual-API host using the unchanged coordinator/routes; CPU-only untrained reference, outside the full Bun application |
+| [Warm rollback](../../resources/fin_serve/evidence/rollback-demo-03/actual-rollback.webm), 17.40 seconds | Actual HTTP requests, retained deliberate failure, candidate-to-baseline recovery, route generations 0/1/2 and verified healthy output | Real control/HTTP execution with synthetic backend responses and promotion identities; no GPU or cloud rollout |
+
+The visual capture binds source `5f217fa` and job `2ef71650-4a69-4ab5-8f9f-6698071231c7`. Its worker finished with zero active or retained tasks. The rollback capture executes the unchanged integration drill from an archived `12e4906` source: five of six offered requests completed, with the deliberate failed request retained. Detection-to-healthy time was 0.265 seconds for this local fixture run. That observation does not replace the historical warm drill or measure model startup. The owned test process exited successfully and the private viewer stopped.
+
+Both capture directories include manifests, original observations and reviewed screenshots. The rollback WebM decoded without errors. Earlier unsuccessful capture attempts and the second rollback capture's missing phase labels remain retained. Neither recording contains credentials, and neither has been uploaded to the static Space.
+
+The remaining full-demo sequence is:
 
 1. Inspect exact request outputs alongside the failed quality report, with private prompts excluded from publication.
 2. Send an authenticated text request through Bun and FastAPI to an actual engine, showing final usage and runtime identity.
 3. Submit an image-plus-text request using the frozen bar-chart probe and show the separate failed uniform-color suite.
-4. Submit a durable JAX/Flax visual job, retrieve its PNG and explain the reference model's scope.
-5. Show a release decision and actual warm-route rollback with revision-checked traffic, distinguishing fixture drills from GPU or cloud lifecycle tests.
+4. Connect the recorded component demonstrations into the final walkthrough, keeping the visual-only API host and fixture rollback scopes visible alongside actual pretrained inference.
 
 Keep credentials masked and private prompts, environment values and unrelated desktop content out of recordings. Publish only reviewed evidence actually captured.
 
