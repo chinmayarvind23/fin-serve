@@ -1,28 +1,28 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>FinServe Â· Measured serving results</title>
+<meta name="referrer" content="no-referrer"><title>FinServe Ã‚Â· Measured serving results</title>
 <link rel="stylesheet" href="./landing.css"></head><body><main>
 <p class="eyebrow">FINSERVE / MEASURED RESULTS</p><h1>Serving results, with their limits attached.</h1>
 <p class="lead">FinServe measures text and image inference, retains failed requests, and checks quality before promoting a serving configuration.</p>
 <div class="notice"><strong>This is a static results page.</strong> The measurements below came from a local RTX 4070 Laptop GPU. This Space runs no model, API or evidence registry. The full application can run on your own computer without a paid hosting subscription.</div>
-<p><a class="button" href="./local.html">Run FinServe locally â†’</a></p>
-<section aria-labelledby="latest-correctness"><p class="eyebrow">LATEST COMPLETED CORRECTNESS</p><h2 id="latest-correctness">Candidate qualification: release gate failed</h2>
-<p>The latest completed candidate served all <strong>56/56 HTTP requests</strong>. Correct answers are shown below; HTTP completion alone does not establish answer quality.</p>
+<p><a class="button" href="./local.html">Run FinServe locally Ã¢â€ â€™</a></p>
+<section aria-labelledby="latest-correctness"><p class="eyebrow">LATEST COMPLETED CORRECTNESS</p><h2 id="latest-correctness">Release suite passed; broader checks continue</h2>
+<p>The latest completed 3B quantized candidate served all <strong>56/56 HTTP requests</strong>. Correct answers are shown below; HTTP completion alone does not establish answer quality.</p>
 <div class="quality-cards">
-<article class="quality-card"><h3>Release cohort</h3><p class="quality-score">26/32 <span>81.25%</span></p><meter min="0" max="32" value="26" aria-label="Release cohort: 26 of 32 answers correct, 81.25 percent">26/32</meter><p>Previous ChatML arm: 18/32 (56.25%).</p></article>
-<article class="quality-card"><h3>Historical cohort</h3><p class="quality-score">4/4 <span>100%</span></p><meter min="0" max="4" value="4" aria-label="Historical cohort: 4 of 4 answers correct, 100 percent">4/4</meter><p>Four previously consumed regression cases.</p></article>
+<article class="quality-card"><h3>Release cohort</h3><p class="quality-score">32/32 <span>100%</span></p><meter min="0" max="32" value="32" aria-label="Release cohort: 32 of 32 answers correct, 100 percent">32/32</meter><p>Previous completed run: 26/32 (81.25%).</p></article>
+<article class="quality-card"><h3>Historical cohort</h3><p class="quality-score">3/4 <span>75%</span></p><meter min="0" max="4" value="3" aria-label="Historical cohort: 3 of 4 answers correct, 75 percent">3/4</meter><p>Four previously consumed regression cases.</p></article>
 <article class="quality-card"><h3>Consumed holdout</h3><p class="quality-score">17/20 <span>85%</span></p><meter min="0" max="20" value="17" aria-label="Consumed holdout: 17 of 20 answers correct, 85 percent">17/20</meter><p>Previous ChatML arm: 13/20 (65%).</p></article>
 </div>
-<p class="qualification"><strong>Failed release qualification.</strong> All three cohorts are consumed regression evidence. The holdout is no longer fresh, and these results establish neither fresh-holdout performance nor quality parity.</p>
+<p class="qualification"><strong>Four additional regression errors remain.</strong> The 32-case release correctness check passed, but the additional checks still failed. The candidate is not fully qualified. All three cohorts are consumed regression evidence. The holdout is no longer fresh, and these results establish neither fresh-holdout performance nor quality parity.</p>
 <div class="notice"><strong>A stronger candidate is being tested.</strong> Its results will appear here after verification. The figures above are from the last completed run.</div>
 </section>
 <section><p class="eyebrow">HISTORICAL SUSTAINED TEXT MEASUREMENT</p><h2>Baseline and compiled serving</h2>
-<p>The retained comparison covers 6,144 measured requests, with separate warmups. Token throughput increased 2.64Ã— and p95 latency fell, while median TTFT worsened. The candidate failed its quality gate. These results do not establish production availability or cloud cost savings.</p>
+<p>The retained comparison covers 6,144 measured requests, with separate warmups. Token throughput increased 2.64Ãƒâ€” and p95 latency fell, while median TTFT worsened. The candidate failed its quality gate. These results do not establish production availability or cloud cost savings.</p>
 <a href="./public-results/sustained-comparison.png"><img src="./public-results/sustained-comparison.png" alt="Baseline and compiled serving measurements, including worse TTFT and failed quality qualification"></a>
-<p><a href="./public-results/sustained-comparison.json">Aggregate metadata (JSON)</a> Â· <a href="./public-results/sustained-comparison.svg">Vector figure (SVG)</a></p></section>
+<p><a href="./public-results/sustained-comparison.json">Aggregate metadata (JSON)</a> Ã‚Â· <a href="./public-results/sustained-comparison.svg">Vector figure (SVG)</a></p></section>
 <section><p class="eyebrow">HISTORICAL DEVELOPMENT CURVE / FAILED QUALITY QUALIFICATION</p><h2>Concurrency changes the tradeoff</h2>
 <p>Four short, sequential 256-request cohorts varied client concurrency. Historical source files lack byte attestation, and the separate quality cohort failed. These points do not identify a production optimum or an approved release.</p>
 <a href="./public-results/concurrency-frontier.png"><img src="./public-results/concurrency-frontier.png" alt="Concurrency frontier with throughput, latency and measurement limitations"></a>
-<p><a href="./public-results/concurrency-frontier.json">Aggregate metadata (JSON)</a> Â· <a href="./public-results/concurrency-frontier.svg">Vector figure (SVG)</a></p></section>
-<footer><a href="./local.html">Local setup instructions</a> Â· <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (repository access required)</a><p>Only public aggregate figures are included. Private request records, model weights and credentials are absent. Measurement scope and definitions are included in the aggregate metadata above.</p></footer>
+<p><a href="./public-results/concurrency-frontier.json">Aggregate metadata (JSON)</a> Ã‚Â· <a href="./public-results/concurrency-frontier.svg">Vector figure (SVG)</a></p></section>
+<footer><a href="./local.html">Local setup instructions</a> Ã‚Â· <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (repository access required)</a><p>Only public aggregate figures are included. Private request records, model weights and credentials are absent. Measurement scope and definitions are included in the aggregate metadata above.</p></footer>
 </main></body></html>
