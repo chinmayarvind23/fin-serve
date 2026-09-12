@@ -27,6 +27,7 @@ from pydantic import (
 from finserve.benchmark.constraint_mapping import RequestConstraintMap, read_constraint_map
 from finserve.benchmark.metrics import RequestRecord, summarize
 from finserve.benchmark.request_mapping import chatml_roles
+from finserve.benchmark.routing import RequestRouting, observed_routing
 from finserve.benchmark.workload import WorkItem, Workload, default_workload
 from finserve.http_ownership import HTTPClosureError, own_response
 
@@ -224,6 +225,7 @@ class StreamState(BaseModel):
     generated_tokens: int | None = None
     done: bool = False
     status_code: int | None = None
+    routing: RequestRouting | None = None
     server_ttft_s: float | None = None
     finished: bool = False
     maximum_tokens: int = 4096
@@ -326,6 +328,7 @@ async def request_one(
             ) as response:
                 own_response(response)
                 state.status_code = response.status_code
+                state.routing = observed_routing(response)
                 response.raise_for_status()
                 await consume_stream(response, state)
                 config.require_output_shape(item.prompt, state.output)
@@ -350,6 +353,7 @@ async def request_one(
         output=state.output,
         generated_tokens=state.generated_tokens,
         server_ttft_s=state.server_ttft_s,
+        routing=state.routing,
     )
 
 

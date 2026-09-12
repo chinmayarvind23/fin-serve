@@ -2,8 +2,18 @@
 
 import math
 from collections.abc import Sequence
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
+
+from finserve.benchmark.routing import RequestRouting
 
 
 class RequestRecord(BaseModel):
@@ -26,6 +36,15 @@ class RequestRecord(BaseModel):
     generated_tokens: int | None = Field(default=None, ge=0)
     output: str = ""
     server_ttft_s: float | None = Field(default=None, ge=0)
+    routing: RequestRouting | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_rows(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Missing attribution stays absent when old retained request records are reconstructed."""
+        result: dict[str, Any] = handler(self)
+        if self.routing is None:
+            result.pop("routing", None)
+        return result
 
     @model_validator(mode="after")
     def valid_timing(self) -> "RequestRecord":
