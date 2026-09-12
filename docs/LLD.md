@@ -322,3 +322,7 @@ drain at exit. Its JSON result and route-store event/receipt history retain bloc
 Synthetic integration covers actual HTTP load, dispatch attribution, held-stream downscale,
 concurrent controllers, competing plans, stale anchors and lost create responses. This is
 implementation evidence; no hardware throughput, utilization or cost gain follows from it.
+
+### Explicit vLLM cache allocation
+
+`VLLMParameters.kv_cache_memory_bytes` accepts only a positive integer and emits `--kv-cache-memory-bytes`. The value participates in the serving profile digest. An absent or null value is omitted from serialization to preserve historical identities. In vLLM 0.29.0 this bypasses automatic cache-size inference; it does not cap model or activation memory or guarantee that multiple engines fit.

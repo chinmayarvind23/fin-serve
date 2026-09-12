@@ -46,6 +46,8 @@ Managed local launch and stop stages connect the model/image receipts to an exac
 
 Performance collection now proves causal ordering using a shared process clock domain and monotonic bounds between the two runtime probes. This prevents wall-clock corrections from rejecting an otherwise enclosed collection interval. Exact runtime identity remains required, legacy evidence retains its original validation, and GPU clock-drift warnings remain visible.
 
+An optional positive `kv_cache_memory_bytes` pins the vLLM cache allocation in the immutable serving profile. It overrides automatic cache sizing, not total GPU memory: model weights and activation memory still need room. Unset values preserve historical profile bytes. Hardware acceptance must still verify that concurrent engines fit.
+
 Failed startup has a separate abort path. New immutable launch inputs name the
 `posix-flock-abort-v1` operation protocol, so an older executor cannot join them using its
 previous input shape. Launch and abort share a per-attempt POSIX process lock through Docker

@@ -30,6 +30,7 @@ class VLLMParameters(ImmutableModel):
     max_num_seqs: int = Field(default=8, ge=1, le=128, strict=True)
     max_num_batched_tokens: int = Field(default=2048, ge=1, le=131072, strict=True)
     gpu_memory_utilization: float = Field(default=0.4, gt=0, le=0.95, allow_inf_nan=False)
+    kv_cache_memory_bytes: int | None = Field(default=None, gt=0, strict=True)
     enable_prefix_caching: bool = Field(default=False, strict=True)
     enforce_eager: bool = Field(default=True, strict=True)
     enable_chunked_prefill: bool = Field(default=True, strict=True)
@@ -41,10 +42,12 @@ class VLLMParameters(ImmutableModel):
     def preserve_unconstrained_profile(
         self, handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
-        """Do not change historical profile hashes when no explicit grammar backend was selected."""
+        """Preserve historical profile hashes when optional engine overrides are absent."""
         result: dict[str, Any] = handler(self)
         if self.structured_output_backend is None:
             result.pop("structured_output_backend", None)
+        if self.kv_cache_memory_bytes is None:
+            result.pop("kv_cache_memory_bytes", None)
         return result
 
 

@@ -98,6 +98,29 @@ def test_structured_backend_is_pinned_and_changes_profile_identity() -> None:
         VLLMParameters.model_validate({"structured_output_backend": "auto"})
 
 
+def test_explicit_kv_budget_is_frozen_and_passed_as_bytes() -> None:
+    """Explicit cache sizing changes profile identity; defaults retain their historical bytes."""
+    model = manifest()
+    original = profile(model)
+    parameters = VLLMParameters(kv_cache_memory_bytes=512 * 1024**2)
+    assert parameters.model_dump()["kv_cache_memory_bytes"] == 536870912
+    changed = original.model_copy(update={"engine_parameters_json": parameters.model_dump_json()})
+    assert changed.digest() != original.digest()
+    assert VLLMParameters.model_validate_json(parameters.model_dump_json()) == parameters
+    command = engine_arguments(changed, model, "0.29.0")
+    assert command[command.index("--kv-cache-memory-bytes") + 1] == "536870912"
+    assert command.count("--kv-cache-memory-bytes") == 1
+    assert "--kv-cache-memory-bytes" not in engine_arguments(original, model, "0.29.0")
+    assert "kv_cache_memory_bytes" not in VLLMParameters().model_dump()
+    assert (
+        VLLMParameters(kv_cache_memory_bytes=None).model_dump_json()
+        == VLLMParameters().model_dump_json()
+    )
+    for invalid in (0, -1, True, 1.5, "536870912"):
+        with pytest.raises(ValueError):
+            VLLMParameters.model_validate({"kv_cache_memory_bytes": invalid})
+
+
 def test_engine_parameters_and_model_identity_are_not_runtime_overrides() -> None:
     """Runtime command construction rejects unknown flags, package changes and unverified models."""
     model = manifest()
