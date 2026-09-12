@@ -103,7 +103,7 @@ The full local CPU suite on `66b5501` passed **1,134 tests**, with **49 skipped*
 
 ## Next improvements
 
-**Product:** expand chart reasoning beyond three functional probes and improve exact-format correctness before accepting an optimized release.
+**Product:** expand chart reasoning beyond three functional probes and improve broader and fresh-holdout correctness beyond the consumed release suite.
 
 **Architecture:** extend the accepted local runtime producer to multiple GPUs. The full real-GPU Airflow workflow now passes, including canonical gates, deployment, 60 probation probes and cleanup. Its separate 512-request prefix-cache trial reduced median client TTFT from 247 to 116 ms and passed all 32 consumed release correctness cases. Automatic GPU capacity acceptance remains the final local hardware check. AWS deployment remains an optional user-run path. The text trace chain passes actual Ray/HTTP integration checks.
 
