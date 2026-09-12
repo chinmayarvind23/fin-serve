@@ -1,6 +1,14 @@
 # Recorded results
 
-Raw artifacts remain in the private workspace `resources/fin_serve/evidence/`. This repository publishes the methods, workload and result summary. No optimized release has passed the required correctness gate.
+Raw artifacts remain in the private workspace `resources/fin_serve/evidence/`. This repository publishes the methods, workload and result summary. The short 3B prefix-cache release below passed its frozen correctness and performance gates; historical failed configurations remain documented separately.
+
+## Passed local GPU release workflow
+
+The full Airflow producer lifecycle completed successfully on source `3069a28efc3c7fcb25d7ab01e5d219aee2f71f3e`, with actual Docker engines, model collection, canonical gates, deployment, 60 probation probes and baseline cleanup. This was a short operational acceptance run, `gpu-producer-airflow-05`, separate from the sustained comparison below.
+
+Both arms used Qwen2.5-3B-Instruct-AWQ, eager vLLM 0.29.0, four sequences and an explicit 512 MiB KV cache budget. Only candidate prefix caching was enabled. Each arm retained 256 measured requests and 16 separate warmups. All 512 measured requests completed. Median client TTFT fell from **247.43 to 116.07 ms (53.1%)**, while p95 fell from **2.242 to 0.857 s**. The frozen 32-case release suite achieved **32/32 candidate correctness and 100% baseline parity** under the unchanged gate.
+
+These are consumed release cases, not a fresh holdout or general quality guarantee. The short comparison does not replace the sustained throughput experiment or establish a production SLA. Earlier broad quality failures remain unresolved evidence. The local release result does not establish an AWS deployment.
 
 ## Sustained native text comparison
 
