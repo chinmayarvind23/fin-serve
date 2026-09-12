@@ -162,6 +162,8 @@ Warm routes are separate active traffic truth. Every cutover compares the expect
 
 ## Measurement definitions
 
+Managed performance receipts optionally carry `collection_clock` with a process domain and monotonic lower/upper bounds. The opening runtime probe completes before the lower bound; the upper bound precedes the closing probe. Verification requires the collector environment's matching domain, anchor and measured interval to lie inside those bounds. Completed replay verifies retained evidence without comparing against the replay process's clock. Legacy receipts omit the field and retain strict wall-clock containment. Container/start identity checks and GPU clock-drift warnings remain independent requirements.
+
 The producer task runtime freezes a `ProducerInput` before fetching. After verified model
 fetch and image build, it derives both runtime revisions, serving profiles and collection
 specifications from those receipts. It verifies source/model/image linkage and the model's

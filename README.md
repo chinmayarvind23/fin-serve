@@ -105,6 +105,6 @@ The full local CPU suite on `66b5501` passed **1,134 tests**, with **49 skipped*
 
 **Product:** expand chart reasoning beyond three functional probes and improve exact-format correctness before accepting an optimized release.
 
-**Architecture:** finish end-to-end acceptance of the implemented artifact-bound runtime producer, then extend the verified local two-engine path to multiple GPUs. The first real Airflow run reached a healthy engine but failed during pre-collection model verification; its owned runtime cleanup passed. AWS deployment remains an optional user-run path. The text trace chain passes actual Ray/HTTP integration checks.
+**Architecture:** finish end-to-end acceptance of the implemented artifact-bound runtime producer, then extend the verified local two-engine path to multiple GPUs. The latest real Airflow attempt retained all 3,072 baseline measurements and 64 warmups, then rejected publication after a wall-clock adjustment broke timestamp containment. Owned cleanup passed. The corrected collector uses same-process monotonic bounds; a full GPU rerun remains unverified. AWS deployment remains an optional user-run path. The text trace chain passes actual Ray/HTTP integration checks.
 
 **Engineering:** repeat and randomize paired measurements, distinguish physical GPU telemetry from per-engine cache occupancy, measure real billed cost, and exercise node/process loss separately from warm route rollback. These remaining checks are tracked explicitly rather than inferred from passing unit tests.

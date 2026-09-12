@@ -4,11 +4,14 @@ import json
 import math
 import re
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Literal, cast
 
 import httpx
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
+from finserve.benchmark.clock import clock_domain
 from finserve.benchmark.gpu import TelemetrySample, aggregate
 from finserve.benchmark.runner import validate_evidence
 from finserve.contracts.deployment import ImmutableModel
@@ -37,6 +40,22 @@ from finserve.registry.quality_collection import bounded_file
 from finserve.registry.runtime_stages import load_launch
 
 
+class CollectionClock(ImmutableModel):
+    """Causal bounds captured after the first probe and before the second probe."""
+
+    protocol: Literal["process-perf-counter-v1"] = "process-perf-counter-v1"
+    domain: str = Field(pattern=r"^[0-9a-f]{32}:[1-9][0-9]*$")
+    lower_s: float = Field(ge=0, allow_inf_nan=False)
+    upper_s: float = Field(ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def ordered(self) -> "CollectionClock":
+        """Clock evidence cannot attest a reversed collection interval."""
+        if self.upper_s < self.lower_s:
+            raise ValueError("collection clock bounds moved backwards")
+        return self
+
+
 class PerformanceReceipt(ImmutableModel):
     """Raw artifacts retain collector provenance separately from the engine image source."""
 
@@ -51,6 +70,15 @@ class PerformanceReceipt(ImmutableModel):
     telemetry: ArtifactRef
     status: ArtifactRef
     gpu_summary: ArtifactRef
+    collection_clock: CollectionClock | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Historical receipts retain their exact absent-field serialization."""
+        result: dict[str, Any] = handler(self)
+        if self.collection_clock is None:
+            result.pop("collection_clock", None)
+        return result
 
 
 def document(path: Path, maximum_bytes: int) -> dict[str, Any]:
@@ -120,10 +148,39 @@ def verify_observations(receipt: PerformanceReceipt, launch: RuntimeReceipt) -> 
             or observation.output_directory != launch.output_directory
         ):
             raise ValueError("performance observations refer to different runtime starts")
-    if receipt.before.observed_at > receipt.after.observed_at:
+    if receipt.collection_clock is None and receipt.before.observed_at > receipt.after.observed_at:
         raise ValueError("runtime observations moved backwards")
     if receipt.runtime.digest() != launch.specification_sha256:
         raise ValueError("performance runtime differs from launch receipt")
+
+
+def verify_window(
+    receipt: PerformanceReceipt,
+    directory: Path,
+    spec: PerformanceCollectionSpec,
+    start: float,
+    end: float,
+) -> None:
+    """New evidence uses one process clock; legacy artifacts retain strict wall checks."""
+    environment = document(directory / "environment.json", spec.maximum_raw_bytes)
+    bounds = receipt.collection_clock
+    if bounds is None:
+        if "clock_domain" in environment:
+            raise ValueError("collection clock attestation is missing")
+        if not receipt.before.observed_at <= start <= end <= receipt.after.observed_at:
+            raise ValueError("performance window falls outside runtime observations")
+        return
+    manifest = document(directory / "run" / "manifest.json", spec.maximum_raw_bytes)
+    if environment.get("clock_domain") != bounds.domain:
+        raise ValueError("performance collection clock domain differs")
+    if not (
+        bounds.lower_s
+        <= environment["clock_monotonic_anchor_s"]
+        <= manifest["measured_started_s"]
+        <= manifest["measured_finished_s"]
+        <= bounds.upper_s
+    ):
+        raise ValueError("performance window falls outside runtime observations")
 
 
 def load_performance_receipt(journal: ProducerStages, reference: ArtifactRef) -> PerformanceReceipt:
@@ -166,8 +223,7 @@ def load_performance_receipt(journal: ProducerStages, reference: ArtifactRef) ->
         ):
             (directory / name).write_bytes(journal.artifacts.get(artifact))
         start, end = verify_experiment(directory, spec)
-        if not receipt.before.observed_at <= start <= end <= receipt.after.observed_at:
-            raise ValueError("performance window falls outside runtime observations")
+        verify_window(receipt, directory, spec, start, end)
     return receipt
 
 
@@ -251,7 +307,12 @@ async def performance_stage(
     try:
         directory = await owned_disk(lambda: attempt_directory(workspace, running))
         before = await runtime.observe(runtime_spec, launch, client)
+        domain, lower = clock_domain(), time.perf_counter()
         await collect_performance(spec, directory)
+        upper = time.perf_counter()
+        if clock_domain() != domain:
+            raise ValueError("collection process changed")
+        bounds = CollectionClock(domain=domain, lower_s=lower, upper_s=upper)
         after = await runtime.observe(runtime_spec, launch, client)
 
         def publish() -> PerformanceReceipt:
@@ -264,6 +325,7 @@ async def performance_stage(
                 specification=journal.artifacts.put(spec.canonical().encode()),
                 runtime=runtime_spec,
                 launch=launch_ref,
+                collection_clock=bounds,
                 before=before,
                 after=after,
                 run=bundle,
@@ -281,8 +343,7 @@ async def performance_stage(
                 ),
             )
             verify_observations(receipt, launch)
-            if not before.observed_at <= start <= end <= after.observed_at:
-                raise ValueError("performance window falls outside runtime observations")
+            verify_window(receipt, directory, spec, start, end)
             reference = journal.artifacts.put(receipt.model_dump_json().encode())
             assert running.attempt_id is not None
             journal.finish(stage_id, running.attempt_id, reference)

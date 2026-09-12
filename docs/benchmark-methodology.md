@@ -22,6 +22,8 @@ The committed `benchmarks/configs/text-release-v1.json` contains 64 cases across
 
 ## Quality, GPU and cost
 
+New managed performance receipts bind collection to a single process's monotonic clock. Bounds are captured after the opening runtime probe and before the closing probe; the collector's clock domain and measured interval must fit exactly inside them. Wall-clock corrections cannot reverse this causal ordering. Historical receipts retain their original strict wall-clock checks. GPU telemetry still uses the recorded wall/monotonic mapping and reports clock drift rather than treating the new collection proof as reliable GPU utilization.
+
 The separate `evals/golden/correctness-32-v1.json` suite has 32 exact/typed-JSON cases. Correctness compares candidate output with expected answers; parity compares it with the frozen reference output. Equal wrong answers can have high parity. Invalid JSON and exact-format mismatches remain failures. The grader is versioned and its source identity is checked during evidence import.
 
 GPU utilization integrates timestamped physical-device samples across the measured epoch interval. Stale gaps are capped and coverage is published. Below 95% coverage, mean utilization is unknown. Shared-GPU processes do not create extra devices. Per-engine running/waiting counts and KV-cache occupancy are different measurements.

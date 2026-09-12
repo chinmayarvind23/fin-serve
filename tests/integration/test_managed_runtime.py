@@ -496,8 +496,9 @@ def performance_spec(spec: RuntimeLaunchSpec) -> PerformanceCollectionSpec:
     )
 
 
+@pytest.mark.parametrize("wall_jump", [0.0, -60.0, 60.0])
 async def test_performance_stage_replays_verified_cas_without_requests(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wall_jump: float
 ) -> None:
     """Actual benchmark rows survive registration and altered derived evidence cannot replay."""
     registry = Registry("sqlite:///" + str(tmp_path / "registry.sqlite"))
@@ -507,6 +508,17 @@ async def test_performance_stage_replays_verified_cas_without_requests(
         spec = performance_spec(runtime_spec)
         runtime = DockerRuntime(Daemon(runtime_spec))
         calls: list[str] = []
+        from types import SimpleNamespace
+
+        wall_offset = 0.0
+
+        def wall_now() -> float:
+            """Simulate an NTP step without altering the process monotonic clock."""
+            return time.time() + wall_offset
+
+        clock = SimpleNamespace(time=wall_now, perf_counter=time.perf_counter)
+        monkeypatch.setattr("finserve.benchmark.experiment.time", clock)
+        monkeypatch.setattr("finserve.registry.managed_runtime.time", clock)
 
         def response(request: httpx.Request) -> httpx.Response:
             """Use one protocol fixture for runtime observations and the measured HTTP transport."""
@@ -515,6 +527,8 @@ async def test_performance_stage_replays_verified_cas_without_requests(
 
         def fixture_client(config: RunConfig) -> httpx.AsyncClient:
             """Install the protocol fixture on the independent collector event loop."""
+            nonlocal wall_offset
+            wall_offset = wall_jump
             return httpx.AsyncClient(transport=httpx.MockTransport(response))
 
         monkeypatch.setattr("finserve.benchmark.experiment.benchmark_client", fixture_client)
@@ -576,6 +590,36 @@ async def test_performance_stage_replays_verified_cas_without_requests(
                 ]
                 is None
             )
+            assert receipt.collection_clock is not None
+            assert (
+                abs(
+                    json.loads(journal.artifacts.get(receipt.status))["clock_drift_seconds"]
+                    - wall_jump
+                )
+                < 1
+            )
+            legacy_environment = dict(environment)
+            legacy_environment.pop("clock_domain")
+            legacy = receipt.model_copy(
+                update={
+                    "collection_clock": None,
+                    "environment": journal.artifacts.put(json.dumps(legacy_environment).encode()),
+                }
+            )
+            assert "collection_clock" not in json.loads(legacy.model_dump_json())
+            if wall_jump < 0:
+                assert receipt.after.observed_at < receipt.before.observed_at
+                with pytest.raises(ValueError, match="backwards"):
+                    load_performance_receipt(
+                        journal, journal.artifacts.put(legacy.model_dump_json().encode())
+                    )
+            elif wall_jump == 0:
+                assert (
+                    load_performance_receipt(
+                        journal, journal.artifacts.put(legacy.model_dump_json().encode())
+                    )
+                    == legacy
+                )
             altered = [
                 receipt.model_copy(
                     update={
@@ -629,17 +673,25 @@ async def test_performance_stage_replays_verified_cas_without_requests(
                 receipt.model_copy(
                     update={"before": receipt.before.model_copy(update={"container_id": "0" * 64})}
                 ),
+                receipt.model_copy(update={"collection_clock": None}),
                 receipt.model_copy(
                     update={
-                        "after": receipt.after.model_copy(
-                            update={"observed_at": receipt.before.observed_at - 1}
+                        "collection_clock": receipt.collection_clock.model_copy(
+                            update={"lower_s": receipt.collection_clock.upper_s}
                         )
                     }
                 ),
                 receipt.model_copy(
                     update={
-                        "before": receipt.before.model_copy(
-                            update={"observed_at": receipt.after.observed_at}
+                        "collection_clock": receipt.collection_clock.model_copy(
+                            update={"upper_s": receipt.collection_clock.lower_s}
+                        )
+                    }
+                ),
+                receipt.model_copy(
+                    update={
+                        "collection_clock": receipt.collection_clock.model_copy(
+                            update={"domain": "0" * 32 + ":1"}
                         )
                     }
                 ),

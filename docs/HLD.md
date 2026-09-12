@@ -44,6 +44,8 @@ Producer stages precede that decision. A model stage downloads a frozen file man
 
 Managed local launch and stop stages connect the model/image receipts to an exact Docker process and a real inference readiness check. The actual cold-start proof reached readiness in 152.970 seconds and reconciled the same container start before verified removal. This timing includes local engine startup and is separate from the warm rollback measurement. The performance stage now binds recomputed benchmark evidence to observations of that same runtime start. Its integration tests use synthetic transports and Docker responses; the producer DAG is connected and scheduler-tested with fixtures, and sequential producer releases reuse a stable baseline with fresh evidence. A full live GPU DAG run remains pending.
 
+Performance collection now proves causal ordering using a shared process clock domain and monotonic bounds between the two runtime probes. This prevents wall-clock corrections from rejecting an otherwise enclosed collection interval. Exact runtime identity remains required, legacy evidence retains its original validation, and GPU clock-drift warnings remain visible.
+
 Failed startup has a separate abort path. New immutable launch inputs name the
 `posix-flock-abort-v1` operation protocol, so an older executor cannot join them using its
 previous input shape. Launch and abort share a per-attempt POSIX process lock through Docker

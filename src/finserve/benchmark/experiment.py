@@ -7,6 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from finserve.benchmark.clock import clock_domain
 from finserve.benchmark.gpu import TelemetrySample, aggregate, collect
 from finserve.benchmark.runner import RunConfig, benchmark_client, run_benchmark, write_json
 from finserve.benchmark.workload import Workload
@@ -67,6 +68,7 @@ def prepare_experiment(
     write_json(
         output / "environment.json",
         {
+            "clock_domain": clock_domain(),
             "clock_epoch_anchor_s": epoch_anchor,
             "clock_monotonic_anchor_s": monotonic_anchor,
             "git_sha": source_revision,
