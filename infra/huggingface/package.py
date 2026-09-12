@@ -99,11 +99,18 @@ def static_contents(repository: Path, source: dict[str, bytes]) -> dict[str, byt
             "---\ntitle: FinServe Measured Results\nemoji: 📊\ncolorFrom: blue\n"
             "colorTo: green\nsdk: static\napp_file: index.html\n---\n\n"
             "Public aggregate results from local GPU experiments. No inference or API runs "
-            "in this Space. Run the full application locally using "
-            "[these instructions](https://github.com/chinmayarvind23/fin-serve/blob/master/"
-            "docs/run-free.md).\n"
+            "in this Space. Open [local setup instructions](./local.html) in the app "
+            "or read [the full guide](./run-free.md). GitHub source requires repository access.\n"
         ).encode(),
     }
+    for destination, name in {
+        "local.html": "infra/huggingface/local.html",
+        "run-free.md": "docs/run-free.md",
+    }.items():
+        path = repository / name
+        if path.is_symlink() or repository not in path.resolve().parents:
+            raise ValueError("static instructions must remain inside the repository")
+        result[destination] = path.read_bytes()
     result.update({"public-results/" + Path(name).name: source[name] for name in PUBLIC_FILES})
     return result
 

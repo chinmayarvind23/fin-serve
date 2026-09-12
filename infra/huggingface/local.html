@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>Run FinServe locally</title>
+<link rel="stylesheet" href="./landing.css"></head><body><main>
+<p><a href="./index.html">← Measured results</a></p>
+<p class="eyebrow">FINSERVE / LOCAL SETUP</p><h1>Run the full application on your computer.</h1>
+<p class="lead">The evidence explorer needs no GPU. Real text inference uses your own NVIDIA GPU. Neither path needs a paid hosting subscription or Kubernetes.</p>
+<div class="notice"><strong>Source access:</strong> the GitHub repository is private. Sign in with an account that has access before cloning. The public Space contains results and these instructions; it does not grant access to the source. A GitHub 404 can mean you are signed out or lack access.</div>
+<section><h2>1. Start the explorer</h2>
+<p>Install Git, Python 3.12 and Docker Desktop with Linux containers. Open PowerShell. If you already have the checkout, change into its directory and start at the build command.</p>
+<pre><code>git clone https://github.com/chinmayarvind23/fin-serve.git
+Set-Location fin-serve
+docker build -f infra/huggingface/Dockerfile -t finserve-explorer:local .
+$env:FINSERVE_API_KEY = python -c "import secrets; print(secrets.token_urlsafe(32))"
+$env:FINSERVE_WEB_KEY = python -c "import secrets; print(secrets.token_urlsafe(32))"
+$finserveExplorerId = docker run --detach --publish 127.0.0.1:7860:7860 --memory 512m --cpus 2 --pids-limit 128 --env FINSERVE_API_KEY --env FINSERVE_WEB_KEY finserve-explorer:local
+if ($LASTEXITCODE -ne 0) { throw "Explorer container did not start" }</code></pre>
+<p>Once the container is ready, open <code>http://127.0.0.1:7860</code> in a new browser tab. Open the authenticated explorer and enter your <code>$env:FINSERVE_WEB_KEY</code> value. Inspect that value only in your private terminal. The initial registry has no runs; the public figures are available immediately.</p>
+<pre><code>curl.exe --fail http://127.0.0.1:7860/healthz
+docker logs --tail 30 $finserveExplorerId</code></pre>
+<p>This starts the actual Bun and Python GraphQL application. The <a href="./run-free.md" download>full setup guide</a> explains persistent evidence and the separate services.</p></section>
+<section><h2>2. Use the local GPU for inference</h2>
+<p>Use Linux or Ubuntu in WSL2 with a working NVIDIA driver and Docker GPU support. The example configuration needs an idle device with about 8 GB VRAM. Run this check from the Linux checkout:</p>
+<pre><code>uv sync --frozen
+uv run --no-sync python scripts/check_gpu.py</code></pre>
+<p>The check refuses a busy or unsupported device. It never stops another workload. Coordinate a free window if Ollama or another project is using the GPU.</p>
+<p><a class="button" href="./run-free.md" download>Download the complete GPU and explorer commands</a></p>
+<p>The guide includes the pinned public model download, vLLM container, FinServe gateway, test request and cleanup. Those steps use local inference, not a paid API. Successful requests do not imply the model passes the project's quality gate.</p></section>
+<section><h2>3. Stop your explorer</h2>
+<p>Use the container ID returned by your own launch. This basic container has ephemeral data.</p>
+<pre><code>docker stop $finserveExplorerId
+docker rm $finserveExplorerId
+Remove-Item Env:FINSERVE_API_KEY, Env:FINSERVE_WEB_KEY</code></pre></section>
+<footer><a href="./index.html">Back to measured results</a> · <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (access required)</a></footer>
+</main></body></html>

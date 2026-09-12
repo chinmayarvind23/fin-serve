@@ -8,3 +8,6 @@ h2 { font-size: 2rem; } p { line-height: 1.7; } .lead { max-width: 780px; font-s
 a { color: #a5ddff; } a:focus-visible { outline: 3px solid #fbbf24; outline-offset: 4px; }
 .muted, footer { color: #abb9cb; } section { margin-top: 64px; } img { display: block; width: 100%; height: auto; border-radius: 8px; }
 footer { border-top: 1px solid #35425a; margin-top: 64px; padding-top: 24px; }
+pre { overflow-x: auto; padding: 20px; border: 1px solid #35425a; border-radius: 8px; background: #101b2d; line-height: 1.6; }
+code { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+pre code { overflow-wrap: normal; }

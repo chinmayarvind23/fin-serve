@@ -5,6 +5,10 @@ publishes static aggregate results. It runs no inference or API. The full explor
 and serving processes run on your own computer. No AWS account, Hugging Face PRO,
 paid inference endpoint or Kubernetes cluster is needed for these local recipes.
 
+The GitHub repository is private. Clone it while authenticated as an account with
+repository access; otherwise GitHub returns 404. Public setup instructions are
+also available [directly on the Space](https://chinmayarvind-finserve.static.hf.space/local.html).
+
 ## Full evidence explorer on Windows
 
 Install Git, Python 3.12 and Docker Desktop with Linux containers, then open PowerShell:
@@ -124,7 +128,7 @@ uvx --from huggingface_hub hf repos create your-account/finserve --type space --
 uv run --isolated --no-project --with huggingface_hub python -c 'from huggingface_hub import HfApi; HfApi().upload_folder(repo_id="your-account/finserve", repo_type="space", folder_path="/absolute/outside/repo/static-space")'
 ```
 
-The SDK upload updates the already-created static Space directly. The package includes one HTML page, CSS, six committed aggregate files, a Space
+The SDK upload updates the already-created static Space directly. The package includes two HTML pages, the setup guide, CSS, six committed aggregate files, a Space
 README and a file-hash manifest. It contains no credentials, request records,
 model weights or backend. [Static Spaces](https://huggingface.co/docs/hub/en/spaces-sdks-static)
 use `sdk: static` and `app_file: index.html`. Keep the Docker package for local use

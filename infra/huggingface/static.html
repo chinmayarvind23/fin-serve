@@ -5,7 +5,7 @@
 <p class="eyebrow">FINSERVE / MEASURED RESULTS</p><h1>Serving results, with their limits attached.</h1>
 <p class="lead">FinServe measures text and image inference, retains failed requests, and checks quality before promoting a serving configuration.</p>
 <div class="notice"><strong>This is a static results page.</strong> The measurements below came from a local RTX 4070 Laptop GPU. This Space runs no model, API or evidence registry. The full application can run on your own computer without a paid hosting subscription.</div>
-<p><a class="button" href="https://github.com/chinmayarvind23/fin-serve/blob/master/docs/run-free.md">Run FinServe locally →</a></p>
+<p><a class="button" href="./local.html">Run FinServe locally →</a></p>
 <section><p class="eyebrow">SUSTAINED TEXT MEASUREMENT</p><h2>Baseline and compiled serving</h2>
 <p>The retained comparison covers 6,144 measured requests, with separate warmups. Token throughput increased 2.64× and p95 latency fell, while median TTFT worsened. The candidate failed its quality gate. These results do not establish production availability or cloud cost savings.</p>
 <a href="./public-results/sustained-comparison.png"><img src="./public-results/sustained-comparison.png" alt="Baseline and compiled serving measurements, including worse TTFT and failed quality qualification"></a>
@@ -14,5 +14,5 @@
 <p>Four short, sequential 256-request cohorts varied client concurrency. Historical source files lack byte attestation, and the separate quality cohort failed. These points do not identify a production optimum or an approved release.</p>
 <a href="./public-results/concurrency-frontier.png"><img src="./public-results/concurrency-frontier.png" alt="Concurrency frontier with throughput, latency and measurement limitations"></a>
 <p><a href="./public-results/concurrency-frontier.json">Aggregate metadata (JSON)</a> · <a href="./public-results/concurrency-frontier.svg">Vector figure (SVG)</a></p></section>
-<footer><a href="https://github.com/chinmayarvind23/fin-serve">Source repository</a> · <a href="https://github.com/chinmayarvind23/fin-serve/blob/master/docs/performance.md">Methods and scope</a><p>Only public aggregate figures are included. Private request records, model weights and credentials are absent.</p></footer>
+<footer><a href="./local.html">Local setup instructions</a> · <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (repository access required)</a><p>Only public aggregate figures are included. Private request records, model weights and credentials are absent. Measurement scope and definitions are included in the aggregate metadata above.</p></footer>
 </main></body></html>
