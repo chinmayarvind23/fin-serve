@@ -1,7 +1,5 @@
 # Low-level design
 
-This document explains the contracts and ownership rules behind the verified local GPU release and replica lifecycle. The [design guide](README.md) connects these details to the architecture, demo and [measured results](results.md).
-
 The source packages below are implemented. Runtime and acceptance limits are separated from the type contracts they exercise.
 
 ## Code map
@@ -77,7 +75,7 @@ Explicit output constraints survive chat conversion and Ray serialization. Uncon
 
 For constrained requests, the native adapter retains at most 128 KiB of text while streaming original fragments. At DONE it validates syntax before publishing terminal success. This catches incomplete JSON at a token limit, duplicate keys and wrong JSON value types without repairing the answer. The buffer applies only to explicitly constrained requests. Invalid streamed content remains visible as partial failed output. Managed profiles optionally pin xgrammar with whitespace permitted; absent configuration preserves historical profile hashes.
 
-`benchmark.constraint_mapping` binds exact original prompt hashes to caller-declared shapes. The complete bounded map and selected wire transport enter the shared request-mapping digest. Both collection specs preflight every prompt; raw reconstruction rechecks successful output syntax. No constraint derives from an expected answer or case label. Producer templates freeze the map before image construction, require xgrammar in both parameter sets, and resolve executable runtime identities from receipts. Direct payloads, collection specs and evidence reject an unresolved template. JSON receipt comparisons use JSON-mode serialization so nested tuple fields reconstruct as their recorded arrays. Actual constrained GPU collection is complete, with separate regression and independent quality results retained. Isolated grammar first-use cost remains unmeasured.
+`benchmark.constraint_mapping` binds exact original prompt hashes to caller-declared shapes. The complete bounded map and selected wire transport enter the shared request-mapping digest. Both collection specs preflight every prompt; raw reconstruction rechecks successful output syntax. No constraint derives from an expected answer or case label. Producer templates freeze the map before image construction, require xgrammar in both parameter sets, and resolve executable runtime identities from receipts. Direct payloads, collection specs and evidence reject an unresolved template. JSON receipt comparisons use JSON-mode serialization so nested tuple fields reconstruct as their recorded arrays.
 
 Producer failure cleanup uses immutable launch and build receipts, so damaged model files do
 not prevent stopping an exactly identified owned process. It retires only revisions that have
@@ -233,32 +231,19 @@ uncertainty even if a raw write also fails. The producer leaves that attempt run
 reconciliation. Successful local draining permits a failed attempt; it does not establish remote
 inference termination.
 
-`requests_per_second = successful_measured_requests / measured_seconds`.
-
-`tokens_per_second = sum(authoritative_generated_tokens_for_successful_measured_requests) / measured_seconds`.
-
-Client TTFT is send-to-first-nonempty-content on the client's clock. Server TTFT uses the server's own receipt-to-first-content duration. End-to-end percentiles use successful request send-to-complete durations; failures remain in the denominator for success rate and in raw records. Warmup is retained separately and excluded from measured summaries. Open-loop scheduled-to-complete delay includes queueing before send; the configured arrival rate is unused in closed-loop mode.
-
-GPU utilization integrates sample-held physical-device observations over a declared epoch-mapped measured interval, caps stale gaps and reports coverage. Below 95% coverage, mean utilization is unknown. Multiple processes sharing one GPU do not increase the physical device count. Cost requires a declared price and billed/modelled time; local throughput alone cannot establish a cloud cost reduction.
-
 The quality grader distinguishes agreement with a reference from correctness against expected answers. A pair of identical wrong answers can have high parity. Missing/invalid structured outputs and exact-format failures remain explicit, and a bad result does not justify editing the frozen suite afterward.
-
-Trace context attaches only during generator execution, never across a consumer yield. Private Ray RPC arguments carry bounded W3C identity; the gateway starts a fresh root. Exporter configuration, queue/response bounds and native shutdown limitations are documented in [observability](observability.md). Actual CPU Ray actors and HTTP fixtures verify the causal parent chain. A pinned local Langfuse stack accepted and returned exact trace/span IDs with null prompt/output fields. The six-process fixture experiment retained all 6,144 successful requests but did not identify an isolated tracing penalty. vLLM kernel spans and cloud ingestion remain separate work.
-
 
 ## KubeRay CPU worker autoscaler
 
 ray.autoscaling.enabled selects enableInTreeAutoscaling and the V2 Conservative autoscaler. Enabled initial/min/max workers are1/1/2; disabled remains2/2/2. idleTimeoutSeconds accepts60?600 with default60. The sidecar inherits the pinned head image, requests100mCPU/512Mi and limits500mCPU/512Mi. Head500m+sidecar100m+worker1000m fits the declared1600m per-node staging allowance; actual system requests, memory and overlapping upgrade clusters still require live checks. Unknown autoscaler options fail schema validation.
 
-Enabled head templates omit serviceAccountName so KubeRay1.6.1 creates a cluster-named ServiceAccount, Role and RoleBinding. Its Role permits namespace-wide Pod get/list/watch/patch, Pod resize patch, and RayCluster get/patch. Head containers share the projected token. Engine and worker templates retain the separate runtime account with automountServiceAccountToken=false. This opt-in does not duplicate Serve actors or infer GPU capacity from CPU Pods. Active actors may keep a worker non-idle; no consolidation or request-driven throughput gain is claimed. Actual Helm rendering and the pinned RayService CRD validate both modes, but API admission and observed scale/drain cycles remain pending.
-
+Enabled head templates omit serviceAccountName so KubeRay1.6.1 creates a cluster-named ServiceAccount, Role and RoleBinding. Its Role permits namespace-wide Pod get/list/watch/patch, Pod resize patch, and RayCluster get/patch. Head containers share the projected token. Engine and worker templates retain the separate runtime account with automountServiceAccountToken=false. This opt-in does not duplicate Serve actors or infer GPU capacity from CPU Pods. Active actors may keep a worker non-idle; no consolidation or request-driven throughput gain is claimed.
 
 ## EKS node scaling identities and topology
 
 `enable_node_autoscaling` defaults to false. Enabled configuration creates nine ASG tags: three for CPU and six for GPU. Both groups carry cluster discovery tags; GPU metadata also carries the pool, accelerator, taint and GPU count required for scale-from-zero scheduling. Tags target the ASG names returned by the managed node-group resources. IAM scaling writes require these actual ASG name patterns plus both cluster tag conditions. Only the exact `kube-system/finserve-cluster-autoscaler` service account and STS audience can assume the role. Capacity discovery is read-only; DescribeNodegroup is restricted to the two node-group ARNs.
 
-Both node groups ignore subsequent `scaling_config[0].desired_size` drift. CPU initial/min/max is 2/2/3 in both modes; GPU initial defaults to zero with bounds 0/1. Disabling role/tag creation cannot reduce the CPU maximum below an autoscaler-selected desired size of three. Stop the controller before disabling, and use an explicit safe EKS desired-size update if shrinking is required. GPU subnet selection is fixed to private subnet zero so a node returning from zero can mount the retained model PV in that AZ. Existing installations must review node-group replacement and PV topology; no volume migration is implied. Terraform validate and five mocked plan runs pass, but no live API acceptance, controller installation or scale cycle has been verified.
-
+Both node groups ignore subsequent `scaling_config[0].desired_size` drift. CPU initial/min/max is 2/2/3 in both modes; GPU initial defaults to zero with bounds 0/1. Disabling role/tag creation cannot reduce the CPU maximum below an autoscaler-selected desired size of three. Stop the controller before disabling, and use an explicit safe EKS desired-size update if shrinking is required. GPU subnet selection is fixed to private subnet zero so a node returning from zero can mount the retained model PV in that AZ. Existing installations must review node-group replacement and PV topology; no volume migration is implied.
 
 ## Pinned node controller contract
 
@@ -269,7 +254,6 @@ The single controller requests 100m CPU/600Mi on CPU nodes, caps total nodes at 
 The warm gateway caches at most 32 backend clients. At capacity it closes an idle
 retired pool before allocating another; local stream ownership remains pinned when
 HTTP closure is uncertain. Pool eviction supplies no remote runtime drain proof.
-
 
 ## Local model capacity
 

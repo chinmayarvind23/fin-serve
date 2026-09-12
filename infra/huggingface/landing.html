@@ -1,19 +1,20 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>FinServe · Measured serving results</title>
+<meta name="referrer" content="no-referrer"><title>FinServe | Text and multimodal inference</title>
 <link rel="stylesheet" href="./landing.css"></head><body><main>
-<p class="eyebrow">FINSERVE / CPU EVIDENCE EXPLORER</p><h1>GPU serving. Measured performance. Verified releases.</h1>
-<p class="lead">This Space hosts FinServe's evidence browser and GraphQL read service. It serves no model inference and uses no GPU.</p>
-<div class="notice"><strong>The registry starts empty.</strong> Private request records are not packaged into this public deployment. The authenticated explorer is the real application; connecting to this initial registry returns no registered runs. Local data is ephemeral and may disappear when the Space restarts.</div>
-<p><a class="button" href="/explorer">Open the authenticated explorer →</a></p>
-<p class="muted">Registry access requires a separate explorer key supplied by the operator. No credential is embedded in this page. The figures below are public aggregates committed to the project.</p>
-<section><p class="eyebrow">HISTORICAL SUSTAINED TEXT MEASUREMENT</p><h2>Historical baseline and compiled serving</h2>
-<p>The retained benchmark covers 6,144 measured requests across two native configurations. Consult the figure and metadata for the workload, source identity, timing definitions and failed quality gate. These measurements were collected on a local GPU workstation; this CPU Space did not produce them.</p>
-<a href="/public-results/sustained-comparison.png"><img src="/public-results/sustained-comparison.png" alt="FinServe sustained serving comparison with metric definitions and limitations"></a>
-<p><a href="/public-results/sustained-comparison.json">Aggregate metadata (JSON)</a> · <a href="/public-results/sustained-comparison.svg">Vector figure (SVG)</a></p></section>
-<section><p class="eyebrow">HISTORICAL DEVELOPMENT CURVE</p><h2>Concurrency changes the tradeoff</h2>
-<p>Four short, sequential 256-request cohorts varied client concurrency under one native configuration. Historical untracked source files lack byte attestation. The separate quality cohort failed its gate; these points do not identify a production optimum or a quality-approved release.</p>
-<a href="/public-results/concurrency-frontier.png"><img src="/public-results/concurrency-frontier.png" alt="Concurrency frontier with measured durations, latency, throughput and failed quality qualification"></a>
-<p><a href="/public-results/concurrency-frontier.json">Aggregate metadata (JSON)</a> · <a href="/public-results/concurrency-frontier.svg">Vector figure (SVG)</a></p></section>
-<footer><a href="https://github.com/chinmayarvind23/fin-serve">Source repository</a> · <a href="https://github.com/chinmayarvind23/fin-serve/blob/master/docs/performance.md">Methods and scope</a><p>Public aggregates are separate from the authenticated registry. This website cannot promote, roll back or deploy a model.</p></footer>
+<nav aria-label="Main navigation"><a class="brand" href="/">FIN<span>SERVE</span></a><div><a href="#features">Features</a><a href="#architecture">Architecture</a><a href="/explorer">Get started</a></div></nav>
+<header class="hero"><p class="eyebrow">TEXT / MULTIMODAL / RELEASE CONTROL</p><h1>Serve models.<br><span>Own the request lifecycle.</span></h1>
+<p class="lead">FinServe connects GPU inference, distributed routing, and automated release control. Stream text, ask questions about images, and manage model updates through explicit service boundaries.</p>
+<div class="actions"><a class="button" href="/explorer">Open the explorer</a><a href="https://github.com/chinmayarvind23/fin-serve">Explore the code</a></div>
+<p class="muted hosting">CPU explorer with an initially empty registry. Model inference runs in separate services.</p></header>
+<section id="features"><p class="eyebrow">BUILT FOR MODEL-BACKED APPLICATIONS</p><h2>From request to controlled release.</h2>
+<div class="features"><article><h3>Stream text and image answers</h3><p>FastAPI and engine adapters provide bounded streaming, validated image input, and cancellation ownership.</p></article>
+<article><h3>Route work deliberately</h3><p>Ray Serve selects eligible engines. Redis quotas and admission limits bound work before GPU execution.</p></article>
+<article><h3>Control model changes</h3><p>Airflow coordinates model preparation and gated deployment. Revision checks and durable state protect rollback.</p></article></div></section>
+<section id="architecture"><p class="eyebrow">SERVICE OWNERSHIP</p><h2>Each component has a defined job.</h2>
+<p class="lead">Bun edge &rarr; FastAPI &rarr; Ray Serve &rarr; model engine</p>
+<p>Visual jobs use a separate gRPC JAX/Flax reference worker. The explorer reads registered runs through GraphQL. SQL and immutable artifacts hold release state; MLflow receives operator-controlled exports.</p>
+<p><a href="https://github.com/chinmayarvind23/fin-serve/blob/master/docs/HLD.md">Read the architecture</a></p></section>
+<section><h2>Text and image API walkthrough</h2><img src="/public-assets/inference-demo.gif" alt="Replay of recorded text and image API responses"><p class="muted">Recorded API responses displayed after completion; this replay is not a live browser streaming session.</p></section>
+<footer><p>CPU explorer with an initially empty registry. Model inference runs in separate services.</p><p><a href="/explorer">Open the explorer</a> &middot; <a href="https://github.com/chinmayarvind23/fin-serve">GitHub source</a></p></footer>
 </main></body></html>

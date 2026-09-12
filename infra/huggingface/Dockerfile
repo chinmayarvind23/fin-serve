@@ -30,7 +30,7 @@ COPY --from=web /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=web /web /app/web
 COPY infra/huggingface/launch.py /app/launch.py
 COPY infra/huggingface/landing.html infra/huggingface/landing.css /app/
-COPY docs/assets/concurrency-frontier.* docs/assets/sustained-comparison.* /app/public/
+COPY docs/assets/inference-demo.gif /app/public/inference-demo.gif
 USER 1000:1000
 EXPOSE 7860
 HEALTHCHECK --interval=10s --timeout=3s --start-period=65s --retries=3 \

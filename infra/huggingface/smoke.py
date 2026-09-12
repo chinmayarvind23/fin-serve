@@ -78,16 +78,14 @@ def verify_http(url: str, key: str, internal_key: str, bundle: Path) -> dict[str
         response = client.post("/v1/completions", json={}, headers=headers)
         require(response.status_code == 404, "inference route exposed")
         checks["inference_status"] = response.status_code
-        for name in ("concurrency-frontier", "sustained-comparison"):
-            for extension in ("png", "svg", "json"):
-                filename = f"{name}.{extension}"
-                response = client.get("/public-results/" + filename)
-                expected = (bundle / "docs/assets" / filename).read_bytes()
-                require(
-                    response.status_code == 200 and response.content == expected,
-                    "public artifact changed",
-                )
-                checks[filename] = hashlib.sha256(expected).hexdigest()
+        filename = "inference-demo.gif"
+        response = client.get("/public-assets/" + filename)
+        expected = (bundle / "docs/assets" / filename).read_bytes()
+        require(
+            response.status_code == 200 and response.content == expected,
+            "public artifact changed",
+        )
+        checks[filename] = hashlib.sha256(expected).hexdigest()
     return checks
 
 

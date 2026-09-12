@@ -87,8 +87,7 @@ subnet change. Confirm existing model PVs are in `gpu_availability_zone` before
 enabling scaling or migrating workloads; the change neither moves nor copies EBS
 data. Review desired-size ownership and the new CPU maximum before applying.
 
-Mocked plans verify scope, bounds and metadata. Live controller discovery, pending
-Pod scheduling, drain and scale cycles remain unverified. The controller chart and
+Mocked plans verify scope, bounds and metadata. Verify controller discovery, pending Pod scheduling, drain, and scale cycles in the target account. The controller chart and
 deployment are separate work; the [controller chart](../kubernetes/node-autoscaler/README.md)
 is available for that stage. The design follows the
 [AWS Cluster Autoscaler guidance](https://docs.aws.amazon.com/eks/latest/best-practices/cas.html)

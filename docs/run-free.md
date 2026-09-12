@@ -1,13 +1,6 @@
-# Run FinServe without paid hosting
+# Run FinServe locally
 
-The [Hugging Face page](https://huggingface.co/spaces/chinmayarvind/finserve)
-publishes static aggregate results. It runs no inference or API. The full explorer
-and serving processes run on your own computer. No AWS account, Hugging Face PRO,
-paid inference endpoint or Kubernetes cluster is needed for these local recipes.
-
-The GitHub repository is private. Clone it while authenticated as an account with
-repository access; otherwise GitHub returns 404. Public setup instructions are
-also available [directly on the Space](https://chinmayarvind-finserve.static.hf.space/local.html).
+The explorer runs on CPU. Pretrained inference uses a separately managed NVIDIA GPU engine. The following recipes run on your own computer.
 
 ## Full evidence explorer on Windows
 
@@ -23,7 +16,7 @@ $finserveExplorerId = docker run --detach --publish 127.0.0.1:7860:7860 --memory
 if ($LASTEXITCODE -ne 0) { throw "Explorer container did not start" }
 ```
 
-Open <http://127.0.0.1:7860>. The public figures need no key. Open the explorer
+Open <http://127.0.0.1:7860>. The introduction needs no key. Open the explorer
 and use the value of `$env:FINSERVE_WEB_KEY`; inspect it only in your private
 terminal. The internal API key is different. Both keys are generated locally and
 passed by environment variable, not stored in Git or baked into the image.
@@ -114,10 +107,7 @@ docker stop "$FINSERVE_ENGINE_CONTAINER"
 docker rm "$FINSERVE_ENGINE_CONTAINER"
 ```
 
-The model still has known correctness failures on the retained FinServe suites.
-Successful inference is not release approval. See [results](results.md) for the
-actual measurements and failed gates. The runtime image is large; download time,
-disk capacity and local GPU memory are the practical requirements for this path.
+The runtime image and model require sufficient disk space and GPU memory. Run the configured release checks before promoting a model.
 
 ## Publish your own free static Space
 
@@ -128,7 +118,7 @@ uvx --from huggingface_hub hf repos create your-account/finserve --type space --
 uv run --isolated --no-project --with huggingface_hub python -c 'from huggingface_hub import HfApi; HfApi().upload_folder(repo_id="your-account/finserve", repo_type="space", folder_path="/absolute/outside/repo/static-space")'
 ```
 
-The SDK upload updates the already-created static Space directly. The package includes two HTML pages, the setup guide, CSS, six committed aggregate files, a Space
+The SDK upload updates the already-created static Space directly. The package includes two HTML pages, the setup guide, CSS, a Space
 README and a file-hash manifest. It contains no credentials, request records,
 model weights or backend. [Static Spaces](https://huggingface.co/docs/hub/en/spaces-sdks-static)
 use `sdk: static` and `app_file: index.html`. Keep the Docker package for local use

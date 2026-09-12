@@ -41,9 +41,6 @@ JSON requires 1–16 unique ASCII identifier keys of at most 64 characters. Fiel
 
 The adapter retains at most 128 KiB of constrained output for a final syntax check. Invalid or incomplete output fails before terminal success; any already-streamed fragments remain visible and must be treated as failed output. No repair, trimming or expected-answer comparison occurs. A syntactically valid response can still be factually wrong, and a valid output ending with `finish_reason=length` still reports that limit.
 
-Managed vLLM profiles can pin `structured_output_backend="xgrammar"`, which also explicitly permits JSON whitespace. The API accepts no arbitrary regex, recursive schema, constant, default or caller-provided answer list. Native integration follows the [vLLM 0.29 structured-output API](https://docs.vllm.ai/en/v0.29.0/features/structured_outputs/) and [backend configuration](https://docs.vllm.ai/en/v0.29.0/api/vllm/config/structured_outputs/). Transport, collector and CPU grammar checks pass. Actual constrained GPU runs are complete, including the selected 7B regression score of 55/56 and independent score of 42/48; neither establishes full quality qualification. Isolated first-use overhead remains unmeasured. [Reproducibility](reproducibility.md) describes the separate frozen prompt-to-constraint map used by collectors.
-
-
 ## Managed failed-start reconciliation
 
 The trusted Python operator API is
@@ -60,7 +57,6 @@ It is not a readiness receipt. Partial failures retain intent and evidence witho
 launch failure. Producer `cleanup_unserved` reports `aborted` only after terminal verification;
 `needs_reconciliation` keeps the retired endpoint reserved. POSIX process locking and a shared
 trusted runtime workspace are required; Windows launch/abort fails closed.
-
 
 ## Warm-runtime drain ownership
 
@@ -81,7 +77,6 @@ Producer cleanup reports `needs_reconciliation` for an incomplete drain and reta
 endpoint reservation. It preserves the existing exact runtime-stop receipt after successful
 drain. New protocol stores reject old readers/writers through snapshot schema and SQLite
 write guards; existing stores cannot be upgraded in place to claim old streams drained.
-
 
 ## Local capacity control
 

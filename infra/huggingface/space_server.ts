@@ -11,15 +11,10 @@ const proxy = createProxy({
   maxActive: 4,
   timeoutMs: 15000,
 });
-const publicFiles = new Map<string, string>(
-  ["concurrency-frontier", "sustained-comparison"].flatMap((name) =>
-    ["png", "svg", "json"].map((extension) => {
-      const file = `${name}.${extension}`;
-      return [`/public-results/${file}`, `/app/public/${file}`] as const;
-    }),
-  ),
-);
-publicFiles.set("/landing.css", "/app/landing.css");
+const publicFiles = new Map<string, string>([
+  ["/public-assets/inference-demo.gif", "/app/public/inference-demo.gif"],
+  ["/landing.css", "/app/landing.css"],
+]);
 
 /** Serve the fixed public introduction without asking the HTML bundler to import URL assets. */
 function landing(): Response {
@@ -33,7 +28,7 @@ Bun.serve({
   maxRequestBodySize: 16384,
   idleTimeout: 10,
   routes: { "/": landing, "/about": landing, "/explorer": explorer },
-  /** Only fixed aggregate assets are public; the existing proxy owns every data query. */
+  /** Only fixed presentation assets are public; the existing proxy owns every data query. */
   fetch(request) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/healthz") {

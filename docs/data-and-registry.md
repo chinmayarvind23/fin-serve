@@ -14,7 +14,7 @@ Immutable insertions reject different content under an existing identity. Lifecy
 
 `LocalArtifactStore` publishes SHA256-addressed bytes with immutable references and verifies their digest on read. Publication is atomic; supported POSIX systems also sync the publication directory. The volume must be controlled by the trusted producer. Path checks cannot defend against a malicious process concurrently replacing files.
 
-`S3ArtifactStore` follows the same digest contract and bounded reads. Its request behavior is tested against boto3 with a stubbed service, not a live bucket. Raw benchmark records are JSONL; manifests and summaries are JSON. There is no implemented Parquet metrics pipeline.
+`S3ArtifactStore` follows the same digest contract and bounded reads. Its request behavior is tested against boto3 with a stubbed service, not a live bucket. Raw benchmark records are JSONL; manifests and summaries are JSON.
 
 The model producer keeps weights on a bounded local volume and records a small verified manifest. It checks fixed Hub commits, Git-blob or LFS source checksums and raw SHA256 for every file. The runtime builder archives a full Git commit, builds the pinned engine image and verifies actual Docker identities and labels. See [deployment](deployment.md) for runtime and infrastructure scope.
 
@@ -31,9 +31,7 @@ Collection runs on a dedicated event loop with bounded request population, elaps
 raw-byte limits. Cancellation drains local work. An unresolved HTTP close immediately stops
 new offers, drains active workers and leaves the stage unresolved, including when evidence
 persistence also fails. Byte limits are observed between writes and native cleanup may outlive
-the deadline. These controls do not prove remote GPU cancellation or release approval. The
-complete producer-to-activation Airflow path and a live GPU run through this collection stage
-remain pending.
+the deadline. These controls do not prove remote GPU cancellation or release approval.
 
 The quality collector also preserves unresolved HTTP cleanup if recording the failed request,
 closing the raw file or publishing terminal evidence fails. Its stage remains running for
@@ -50,4 +48,4 @@ live GPU measurement through the managed stage.
 
 `DeploymentStore` uses SQLite for known-good revisions, decisions, detector signals and rollback state. `WarmRouteStore` is a separate SQLite store representing the external traffic route, with its own generation and idempotency receipts. Registry approval does not imply traffic activation or verified recovery.
 
-MLflow is an optional reporting mirror with verified decision-to-run binding; it cannot authorize deployment. Local MLflow integration is tested. Redis owns ephemeral serving state, never evidence or recovery truth. [Airflow pipeline](airflow-pipeline.md) describes the implemented lifecycle and remaining producer orchestration.
+MLflow is an optional reporting mirror with verified decision-to-run binding; it cannot authorize deployment. Local MLflow integration is tested. Redis owns ephemeral serving state, never evidence or recovery truth. [Airflow pipeline](airflow-pipeline.md) describes the implemented lifecycle and producer orchestration.

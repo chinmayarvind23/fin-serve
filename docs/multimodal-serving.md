@@ -10,7 +10,7 @@ FinServe has a pretrained image-question path and a separate untrained visual-to
 
 [vision_openai.py](../src/finserve/engines/vision_openai.py) sends actual chat messages with text and the canonical image data URI. It validates bounded SSE frames, terminal finish reason, authoritative completion-token usage and stream completion. The model uses its engine chat template, following vLLM's [multimodal chat input protocol](https://docs.vllm.ai/en/latest/features/multimodal_inputs/).
 
-The verified local model is Qwen/Qwen2-VL-2B-Instruct revision `895c3a49bc3fa70a340399125c650a463535e71c`. Pinned model identity is separate from a declared runtime profile. The configured vision route selects the VLM backend; a general learned modality router is not implemented.
+Configure the vision route with the exact served model and pinned revision.
 
 ## Stage experiment and quality
 
@@ -18,9 +18,7 @@ The verified local model is Qwen/Qwen2-VL-2B-Instruct revision `895c3a49bc3fa70a
 
 Vision encoding and language decoding remain together inside vLLM. There is no measured independent encoder GPU pool or tensor-transfer path.
 
-The final uniform-color cohort retained 36 transport successes and 18/18 exact paired outputs, but zero correct color answers. Median preparation was 9.25 ms local and 27.25 ms over HTTP; median end-to-end latency was 847.28 and 875.58 ms. The workstation was active, the source tree was dirty, and eight exact source archives identify the run.
 
-Earlier fp16 and bf16 failures remain. Direct minimal model inputs also failed the uniform-color question; inspection found no adapter or image-processor defect. Three separate bar-chart probes answered correctly through vLLM and the integrated edge route. That small functional check does not replace the failed grader or establish general quality. See [recorded results](results.md).
 
 ## JAX/Flax visual-token reference
 

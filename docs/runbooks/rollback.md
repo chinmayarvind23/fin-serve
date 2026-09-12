@@ -30,7 +30,7 @@ Use the trusted lifecycle controller and configured deployment adapter. There is
 
 The tested `WarmRouteAdapter` switches between already-running endpoints. Existing streams retain their original route. Its local 0.680-second fixture drill excludes image pull, model loading and GPU/node restart; it does not establish a cloud rollback target. The single-GPU staging engine uses a disruptive update and needs separate recovery procedures and evidence.
 
-See [low-level design](../LLD.md), [lifecycle decision](../adr/ADR-014-rollback-known-good-revision.md) and [results](../results.md).
+See [low-level design](../LLD.md), [Design](../HLD.md) and [Guide](../quality-gates.md).
 
 ## Automatic local health monitor
 

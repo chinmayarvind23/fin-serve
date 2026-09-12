@@ -4,4 +4,4 @@
 
 `ray_http.py` carries the internal NDJSON protocol. `ray_backends.py` binds one named proxy actor per distinct native endpoint, manages routing reservations and polls actual engine gauges. `backend_observations.py` distinguishes native KV occupancy from physical GPU memory. Production credential checks run before clients or actors are allocated.
 
-Native vLLM/SGLang processes own model execution and continuous batching. Multiple CPU proxy replicas do not create GPU capacity. See [inference mechanics](../../../docs/inference-fundamentals.md), [scheduling](../../../docs/scheduling-and-batching.md), [observability](../../../docs/observability.md) and [results](../../../docs/results.md).
+Native vLLM/SGLang processes own model execution and continuous batching. Multiple CPU proxy replicas do not create GPU capacity. See [inference mechanics](../../../docs/inference-fundamentals.md), [scheduling](../../../docs/scheduling-and-batching.md), [observability](../../../docs/observability.md) and [Guide](../../../docs/quality-gates.md).

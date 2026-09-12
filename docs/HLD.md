@@ -1,115 +1,47 @@
 # High-level design
 
-The local GPU release and automatic replica lifecycle are verified. Start with the [design guide](README.md) for a reading path and [results](results.md) for the measured outcomes. Historical experiment failures and optional cloud deployment checks have separate scope.
+FinServe separates active inference, durable jobs, release control, and browsing. Each boundary has its own admission, identity, and failure rules.
 
-FinServe separates active inference, durable jobs, release control and evidence browsing. A slow registry query or an Airflow retry should not own an engine's token scheduler. Each boundary has its own admission, identity and failure semantics.
+## Request paths
 
-## Request paths and ownership
+The Bun edge authenticates requests, bounds bytes, and propagates disconnects. FastAPI validates contracts and deadlines, applies optional Redis quotas, and holds admission through stream cleanup. Text requests reach an external vLLM/SGLang engine directly or through the Ray HTTP router. The engine owns model weights, prefill, decode, continuous batching, and KV memory.
 
-| Boundary | Owns | Does not establish |
-| --- | --- | --- |
-| Bun inference edge | Bearer authentication, route allowlist, bounded bytes, forwarding deadline, disconnect propagation | GPU availability or model quality |
-| FastAPI ingress | Typed contracts, request deadline, optional Redis quota, application admission, SSE response ownership | Engine-level batching or hardware capacity |
-| Ray HTTP router | Endpoint eligibility, routing decisions, reservations, worker lease retirement | Extra GPU capacity merely from extra CPU proxy replicas |
-| vLLM/SGLang process | Model weights, prefill/decode scheduling, KV cache, engine token accounting | Quality correctness solely from successful HTTP completion |
-| Image route | Bounded PNG decoding and canonicalization, image admission, image-capable backend selection | Independent vision-encoder disaggregation |
-| Visual job coordinator | Durable state, idempotency, worker generation fencing and artifact completion | Pretrained image generation from the untrained JAX reference |
-| Evidence service | Bounded read-only GraphQL over SQL references and checksum-verified artifacts | Permission to deploy a candidate |
-| Airflow/shared gate | Frozen inputs, recomputation, durable lifecycle transitions and deployment callback | A successful cloud rollout without actual deployment evidence |
+The Ray router filters unhealthy, stale, full, or incompatible endpoints before choosing a backend. Immutable leases bind request ownership to one endpoint. CPU proxy replicas, model engine processes, and physical GPU nodes are separate capacities.
 
-A normal text request flows through Bun and FastAPI to a configured engine, optionally via Ray. Redis can enforce a shared principal quota before admission; it is not a mandatory token queue. The engine returns visible deltas, an authoritative output-token count and a completion marker. Failure after visible output remains a failed stream rather than a transparent retry.
+Image requests use a separate admission pool. The gateway validates and canonicalizes an inline PNG before calling a pretrained vision-language engine. Encoding and language decoding remain in that engine.
 
-An image/text request uses a separate capability and admission pool. It accepts one inline PNG, strips metadata through canonical RGB conversion, then invokes a real multimodal Chat Completions endpoint. The tested stage split moves CPU normalization across an HTTP boundary. Vision encoding and language decoding remain inside one vLLM process.
+Visual-generation jobs use durable SQLite intent and a gRPC JAX/Flax reference worker. Submission is idempotent within a tenant. Worker-instance and generation fences prevent late results from completing a newer attempt. This worker demonstrates untrained autoregressive image-token generation.
 
-A visual-generation job uses a different asynchronous API. SQLite persists accepted work and its generation fence. A gRPC worker runs the JAX/Flax reference generator and returns a verified PNG. Worker cancellation names the correct worker instance and generation; a late result cannot complete a newer job attempt.
+## State ownership
 
-## State placement
+| State | Owner |
+| --- | --- |
+| Streaming admission and request leases | Gateway and Ray router |
+| Shared quotas | Redis |
+| Visual job lifecycle | SQLite coordinator |
+| Models, runs, revisions, and decisions | SQLAlchemy registry |
+| Immutable artifacts | Content-addressed local store or S3 adapter |
+| Active endpoint and known-good revision | Generation-checked route store |
+| Experiment tracking copies | MLflow |
 
-| State | Implemented location | Deployment distinction |
-| --- | --- | --- |
-| Request lease / pool ownership | Process memory; Ray actor state | Ephemeral; cleanup follows the owning request |
-| Shared rate quota / optional cache | Redis Lua and expiring keys | Quota errors fail closed; optional cache errors are misses |
-| Durable visual jobs | SQLite WAL with full synchronization | Requires a writable persistent volume; not Redis job truth |
-| Model/run/revision/gate metadata | SQLAlchemy registry, exercised with SQLite | PostgreSQL schema support is distinct from a deployed RDS database |
-| Immutable run/output artifacts | Local content-addressed store; S3 adapter | Real S3 access still requires authenticated deployment validation |
-| Warm active traffic route | Separate SQLite store with CAS generations | Current local controller is not a distributed consensus database |
-| Experiment tracking | MLflow adapter and local SDK execution | Remote hosting and service integration require deployment checks |
-| Observations | Raw requests, GPU samples, sampled OTel spans, Prometheus metrics | Local Langfuse ingestion/query and Prometheus/Grafana alert recovery are verified; cloud hosting remains pending |
+Artifacts have a namespace, digest, and byte length. SQL stores references rather than mutable output blobs. Readers verify bytes before use. MLflow is an operator-controlled mirror; SQL and artifact identities remain authoritative.
 
-Artifacts are immutable; SQL refers to their digest, length and namespace. A native run may explicitly omit a deployment image. A canonical release profile additionally binds model/tokenizer manifests, engine parameters and endpoint identity, while its Revision binds the actual image digest. Historical native results are never relabeled with an image built later.
+## Release workflow
 
-## Release and rollback
+The producer freezes model files, builds an image from committed source, launches the exact runtime, and checks readiness through an inference stream. Collection stages retain all offered requests. The shared gate rechecks the baseline/candidate artifacts and configuration identities before recording approval or rejection.
 
-The shared gate materializes verified baseline/candidate evidence, recomputes performance and quality, verifies revision/profile identity, and persists either approval or rejection. Airflow and CLI use the same gate. A job freezes its required gate mode before profile publication so a crash cannot downgrade a canonical release into a legacy drill.
+Airflow orchestrates the same operations used by the CLI. Attempt journals prevent retries from silently creating duplicate engines. Interrupted stages reconcile their owned resources before proceeding.
 
-Producer stages precede that decision. A model stage downloads a frozen file manifest and verifies its bytes; an image stage binds those files to committed source; a quality stage records every offered response against an unchanged suite. Each stage publishes immutable artifact references through a durable attempt journal. A completed receipt can be replayed after verification. Interrupted work requires evidence that its owned resources have drained before retry; an ambiguous Docker build or failed HTTP close stays unresolved. Completing collection does not approve a release.
+Promotion switches a registered route with expected revision and generation checks. Existing streams finish on their original backend. Activation acknowledgment binds controller state to the observed route. Healthy probation advances the known-good revision; detected regressions initiate rollback to a verified running endpoint.
 
-Managed local launch and stop stages connect the model/image receipts to an exact Docker process and a real inference readiness check. The actual cold-start proof reached readiness in 152.970 seconds and reconciled the same container start before verified removal. This timing includes local engine startup and is separate from the warm rollback measurement. The performance stage now binds recomputed benchmark evidence to observations of that same runtime start. Its integration tests use synthetic transports and Docker responses; the producer DAG is connected and scheduler-tested with fixtures, and sequential producer releases reuse a stable baseline with fresh evidence. The full live GPU DAG passed in `gpu-producer-airflow-05`, including canonical gates, deployment, probation and cleanup.
+## Capacity control
 
-Performance collection now proves causal ordering using a shared process clock domain and monotonic bounds between the two runtime probes. This prevents wall-clock corrections from rejecting an otherwise enclosed collection interval. Exact runtime identity remains required, legacy evidence retains its original validation, and GPU clock-drift warnings remain visible.
+The local controller can add an equivalent engine to a canonically approved primary. A durable global slot includes warming and uncertain allocations. Membership changes select physical endpoints and stop new admission before removal. The controller waits for stream obligations to drain, then stops the exact runtime it owns. Health probes select the primary without contributing to scaling demand.
 
-An optional positive `kv_cache_memory_bytes` pins the vLLM cache allocation in the immutable serving profile. It overrides automatic cache sizing, not total GPU memory: model weights and activation memory still need room. Unset values preserve historical profile bytes. Hardware acceptance must still verify that concurrent engines fit.
+KubeRay manages Ray process placement and optional CPU worker autoscaling. Kubernetes engine workloads and the AWS node autoscaler have distinct owners. Terraform defines node bounds and workload identities; an operator deploys and verifies those definitions in the target account.
 
-Failed startup has a separate abort path. New immutable launch inputs name the
-`posix-flock-abort-v1` operation protocol, so an older executor cannot join them using its
-previous input shape. Launch and abort share a per-attempt POSIX process lock through Docker
-operations and journal publication. Durable abort intent survives process death; uncertain
-daemon work remains unresolved. Automatic producer cleanup first retires an unserved revision,
-then reconciles its exact incomplete attempt, releasing its endpoint only after verified
-absence. Borrowed baselines and traffic-owned revisions remain protected. Older launch inputs
-cannot be automatically aborted, even when no container is visible. Windows fails closed for
-managed launch/abort; this protocol requires a shared trusted workspace with working POSIX
-file locks. Existing completed launch receipts retain their normal replay and stop semantics.
+## Read and observation paths
 
-New local route stores also support retirement of previously served runtimes. The gateway
-registers each pinned response as a durable obligation in the same transaction that selects
-its route. An inactive revision can be retired only when it is absent from every current
-route and controller active/known-good target. Retirement blocks new admissions and rollback
-to that revision; runtime cleanup proceeds only after all registered obligations have closed.
-Borrowed producer collectors hold the same kind of obligation through collection and client
-shutdown, so another job's promotion cannot make their runtime disappear. Crashes or uncertain
-closure retain obligations without a TTL. Legacy route stores remain protected rather than
-being upgraded while an older gateway might still hold an untracked stream. This is a local
-SQLite protocol for cooperating gateways and producer entry points; arbitrary direct backend
-clients are outside its ownership proof. GPU retirement under this new protocol remains
-unmeasured; race and closure behavior is verified with CPU/HTTP fixtures.
+The explorer uses a bounded read-only GraphQL API. It reads registered artifacts and lifecycle records without deployment authority. OpenTelemetry carries sanitized request causality across private hops; Prometheus exposes fixed-cardinality operational signals. Export work runs outside token iteration.
 
-The warm deployment adapter changes route truth with an expected revision and generation. Existing requests retain their pinned backend; new requests read the new route. Rollback is healthy only after a real inference probe observes the expected revision and the active generation remains unchanged. This operation switches running endpoints; it does not imply a bounded cold image pull, model load or node recovery.
-
-## Infrastructure and current limits
-
-Text clients can explicitly request a bounded output shape through the gateway, Ray and warm vLLM routing. The engine applies constrained decoding, and the adapter checks final syntax before reporting success. Shapes contain requested types and formatting rules, not expected answers; the release quality gate still decides correctness. The first completed constrained GPU run served all 56 requests but failed correctness. Bounded scientific notation, null values and primitive arrays extend the format contract; isolated performance evidence remains pending.
-
-Quality and performance collectors share a frozen map from exact prompt identity to requested output shape. The producer preserves that map while deriving actual runtime identities from model and image receipts. Missing bindings and changed mappings reject collection or comparison. Synthetic integration covers the producer path; the map does not retroactively change earlier measurements or establish that its author selected shapes independently of answers.
-
-The AWS foundation specifies private EKS networking, bounded CPU/GPU node groups, RDS, Redis, S3, ECR and workload identities. Helm separates CPU Ray proxies from GPU engine Deployments. Local configuration and mocked provider checks pass; AWS deployment remains optional and undeployed. The separate free static Hugging Face site is live. A Docker image and a Terraform plan are not proof of a running cloud service.
-
-The Hugging Face deployment package serves the existing evidence explorer on CPU with a public aggregate-results page and an authenticated, initially empty registry. Its local container passed actual HTTP/authentication and shutdown checks. It contains no GPU inference service or private raw evidence. The full explorer has actual desktop/mobile Chromium recordings. The free hosted Space publishes static results and local setup instructions; it does not run this Docker explorer or an inference service.
-
-Local experiments include a real Ray-to-GPU path, 6,144 measured text requests, pretrained image/text inference, actual gRPC reference jobs and an HTTP warm rollback drill. After the first two-engine session failed availability, bounded admission waiting completed a separate 256/256-request run on the same workload. Scale-down, restart and failure-after-content drills also produced retained evidence, with driver-wrapper shutdown ambiguity recorded. This establishes a bounded local two-process path; the complete GPU producer workflow and full inference/rollback recording remain in progress; free static hosting and the explorer browser recording are complete. [Results](results.md) states which measured gains failed the quality gate.
-
-
-## CPU worker scaling boundary
-
-The Kubernetes chart offers opt-in KubeRay V2 scaling between one and two CPU worker Pods per RayCluster. Ray actor/task demand drives this loop. The current fixed router and one proxy per engine fit on a single worker; higher HTTP load alone does not add actors or GPUs. The single routing authority and engine admission limits remain intact. Two fixed workers remain the default. GPU engine scaling, node scaling and live scaling evidence are still incomplete. The dedicated head account has namespaced API access; worker and engine accounts remain tokenless. RayService upgrades can overlap clusters, so the per-cluster maximum does not bound total upgrade resources. See infra/kubernetes/README.md for the resource budget and validation scope.
-
-
-## Node scaling foundation
-
-The AWS foundation now separates node desired-size ownership from Terraform configuration. CPU nodes are bounded at two to three; GPU nodes at zero to one in the first configured AZ, matching retained zonal model storage. Terraform initializes desired sizes and continues to own bounds, while subsequent desired-size changes belong to a controller or explicit EKS operations. Opt-in node autoscaling creates scoped IRSA and discovery metadata on actual managed ASGs. It does not install Cluster Autoscaler, scale model replicas, or establish live capacity evidence. The separate controller and pending-Pod/drain tests remain required.
-
-
-## Node controller deployment stage
-
-The separate node-autoscaler Helm chart binds Cluster Autoscaler 1.35.2 to the foundation's dedicated IRSA role and discovery tags. It observes scheduling demand and changes node desired counts within existing bounds. The chart preserves fixed model and Serve replica ownership; it does not equate traffic idleness with a drained engine. Image bytes are pinned, inputs cannot override flags or permissions, and twelve render checks plus an actual offline binary flag check pass. Kubernetes admission, AWS identity, GPU volume mounts and live scale/drain cycles remain unverified.
-
-## Local model capacity
-
-Local model capacity has a bounded, integrated 1 to 2 to 1 path. A frozen plan enrolls only
-an exact, canonically approved and promoted stable primary. Authenticated gateway
-load drives a second equivalent physical runtime through the existing managed launch,
-readiness and cleanup executors. A global deployment slot includes warming and uncertain
-allocations. Durable pool membership selects the actual endpoint; removal stops new
-admissions before existing stream obligations drain. Health continues to probe the primary
-through the ordinary gateway. CPU integration exercises real local HTTP and a fake Docker
-command boundary; a successful GPU capacity experiment has not yet been established.
+See [low-level design](LLD.md), [API contracts](api-contracts.md), [deployment](deployment.md), and [security](security.md) for the concrete interfaces.

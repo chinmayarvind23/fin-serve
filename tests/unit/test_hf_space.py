@@ -170,7 +170,7 @@ def test_only_tracked_sources_and_named_public_files_are_selected(
     assert "src/runtime.py" in selected
     assert not {"evidence/raw.json", ".env", "src/untracked.py"} & selected
     (tmp_path / sorted(pack.PUBLIC_FILES)[0]).write_bytes(b"changed")
-    with pytest.raises(ValueError, match="aggregate differs"):
+    with pytest.raises(ValueError, match="asset differs"):
         pack.selected_files(tmp_path)
 
 

@@ -4,4 +4,4 @@
 
 The routing modules use a separate frozen mechanical workload and owned process/session controls. Their populations do not replace the text release workload. Native image identity stays undeclared when it was not observed. New runs require fresh output directories outside the repository; failed attempts remain retained.
 
-Use [measurement commands](../../../docs/commands.md), [metric definitions](../../../docs/LLD.md) and [recorded results](../../../docs/results.md). Successful HTTP completion, semantic correctness and exact output agreement are separate measurements.
+Use [measurement commands](../../../docs/commands.md), [metric definitions](../../../docs/LLD.md) and [Guide](../../../docs/quality-gates.md). Successful HTTP completion, semantic correctness and exact output agreement are separate measurements.

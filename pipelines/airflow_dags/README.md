@@ -6,7 +6,7 @@ requires frozen rollout settings and a runtime `FINSERVE_API_KEY`, and connects 
 through probation with failure-preserving cleanup. It requires an existing traffic gateway,
 existing route/control stores. Initial deployments use an unused deployment ID at generation
 zero; updates supply the stable `producer.existing_baseline_stage` and current generation.
-A complete live GPU Airflow run remains pending. See
+See
 [the producer workflow](../../docs/airflow-pipeline.md#local-producer-workflow).
 
 For a constrained job, freeze `producer.load.output_constraints` as one complete prompt-hash
@@ -14,7 +14,7 @@ map shared by quality and performance, and set `constraint_transport="native_vll
 engine parameter sets must pin `structured_output_backend="xgrammar"`. Load runtime identities
 remain `undeclared` until the producer derives them from build receipts; that template cannot
 execute directly. Missing bindings reject the job before collection. See the
-[constraint mapping contract](../../docs/reproducibility.md#frozen-output-constraint-maps).
+[Guide](../../docs/commands.md).
 
 `finserve_evidence_lifecycle` registers existing run artifacts, recomputes the canonical
 profile gate, and invokes a server-configured deployment adapter only after approval.

@@ -35,7 +35,7 @@ curl -N http://127.0.0.1:8000/v1/completions \
   -d '{"prompt":"hello","max_tokens":5}'
 uv run --no-sync python -m finserve.benchmark.runner \
   --url http://127.0.0.1:8000/v1/completions \
-  --output ../resources/fin_serve/evidence/fixture-example-01 \
+  --output /absolute/private/fixture-example-01 \
   --requests 64 --warmup 8 --concurrency 4 --max-tokens 16
 ```
 
@@ -57,7 +57,7 @@ uv run --no-sync python -m finserve.benchmark.experiment \
   --config /absolute/private/frozen-run-config.json
 ```
 
-Create and review the config before running. It declares requests, warmup, concurrency, arrival mode/rate, timeout, hardware, model and tokenizer revisions, engine settings and source/image identities. The 6,144-request published comparison used 3,072 measured requests and 64 warmups per configuration. A current rerun uses current source and becomes a new experiment; it cannot recreate an old run identity.
+Create and review the config before running. It declares requests, warmup, concurrency, arrival mode/rate, timeout, hardware, model and tokenizer revisions, engine settings and source/image identities. A current rerun uses current source and becomes a new experiment; it cannot recreate an old run identity.
 
 Quality is a separate measurement against the unchanged suite. The quality client reads `FINSERVE_API_KEY` when configured:
 
@@ -72,7 +72,7 @@ uv run --no-sync python scripts/run_quality.py \
   --reference /absolute/private/quality-baseline-01
 ```
 
-Run the baseline without `--reference` first. Retain its answers and invalid outputs. Do not change expected answers after inspecting failures. [Results](results.md) explain the failed gate in the recorded comparison.
+Run the baseline without `--reference` first. Retain its answers and invalid outputs. Do not change expected answers after inspecting failures.
 
 ## Separate services
 
@@ -99,4 +99,4 @@ uv run python -m finserve.registry.mlflow_cli \
   --experiment-id "$MLFLOW_EXPERIMENT_ID"
 ```
 
-The command prints the actual MLflow run ID after verified artifact upload. It refuses a decision that belongs to a different run. MLflow receives a copy of evidence; the command does not promote, deploy or change a release gate. Export only to a tracking destination authorized to receive the raw request artifacts. See [stack verification](stack-verification.md).
+The command prints the actual MLflow run ID after verified artifact upload. It refuses a decision that belongs to a different run. MLflow receives a copy of evidence; the command does not promote, deploy or change a release gate. Export only to a tracking destination authorized to receive the raw request artifacts.

@@ -16,11 +16,7 @@ SPACE_FILES = {
     "landing.css",
 }
 ROOT_FILES = {"pyproject.toml", "uv.lock", "package.json", "bun.lock"}
-PUBLIC_FILES = {
-    f"docs/assets/{name}.{extension}"
-    for name in ("concurrency-frontier", "sustained-comparison")
-    for extension in ("png", "svg", "json")
-}
+PUBLIC_FILES = {"docs/assets/inference-demo.gif"}
 
 
 def git(repository: Path, *arguments: str) -> bytes:
@@ -34,7 +30,7 @@ def selected_files(repository: Path) -> set[str]:
     """Include tracked application/runtime source and seven named Space files, never raw data."""
     tracked = set(git(repository, "ls-files", "--cached", "-z").decode().strip("\0").split("\0"))
     if not (ROOT_FILES | PUBLIC_FILES) <= tracked:
-        raise ValueError("required public aggregate or lock file is not committed")
+        raise ValueError("required public asset or lock file is not committed")
     selected = (
         ROOT_FILES
         | PUBLIC_FILES
@@ -47,7 +43,7 @@ def selected_files(repository: Path) -> set[str]:
         if committed != working and not (
             name.endswith((".json", ".svg")) and working.replace(b"\r\n", b"\n") == committed
         ):
-            raise ValueError("public aggregate differs from committed bytes")
+            raise ValueError("public asset differs from committed bytes")
     return selected
 
 
@@ -71,9 +67,9 @@ def package(repository: Path, output: Path, *, static: bool = False) -> None:
         contents = static_contents(repository, contents)
     status = git(repository, "status", "--porcelain=v1")
     manifest = {
-        "scope": "public static aggregates; no API or inference"
+        "scope": "static product guide; no API or inference"
         if static
-        else "CPU evidence explorer; public aggregate files only; empty initial registry",
+        else "CPU evidence explorer; public asset files only; empty initial registry",
         "git_revision": git(repository, "rev-parse", "HEAD").decode().strip(),
         "dirty": bool(status),
         "git_status_sha256": hashlib.sha256(status).hexdigest(),
@@ -88,7 +84,7 @@ def package(repository: Path, output: Path, *, static: bool = False) -> None:
 
 
 def static_contents(repository: Path, source: dict[str, bytes]) -> dict[str, bytes]:
-    """Publish only a static page and committed aggregates; never ship API code or secrets."""
+    """Publish only a static page and committed demo assets; never ship API code or secrets."""
     page = repository / "infra/huggingface/static.html"
     if page.is_symlink() or repository not in page.resolve().parents:
         raise ValueError("static page must remain inside the repository")
@@ -96,9 +92,9 @@ def static_contents(repository: Path, source: dict[str, bytes]) -> dict[str, byt
         "index.html": page.read_bytes(),
         "landing.css": source["infra/huggingface/landing.css"],
         "README.md": (
-            "---\ntitle: FinServe Measured Results\nemoji: 📊\ncolorFrom: blue\n"
+            "---\ntitle: FinServe\nemoji: 📊\ncolorFrom: blue\n"
             "colorTo: green\nsdk: static\napp_file: index.html\n---\n\n"
-            "Public aggregate results from local GPU experiments. No inference or API runs "
+            "Product introduction and local setup guide. No inference or API runs "
             "in this Space. Open [local setup instructions](./local.html) in the app "
             "or read [the full guide](./run-free.md). GitHub source requires repository access.\n"
         ).encode(),
@@ -111,7 +107,7 @@ def static_contents(repository: Path, source: dict[str, bytes]) -> dict[str, byt
         if path.is_symlink() or repository not in path.resolve().parents:
             raise ValueError("static instructions must remain inside the repository")
         result[destination] = path.read_bytes()
-    result.update({"public-results/" + Path(name).name: source[name] for name in PUBLIC_FILES})
+    result.update({"public-assets/" + Path(name).name: source[name] for name in PUBLIC_FILES})
     return result
 
 
@@ -120,7 +116,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--static", action="store_true", help="package the free static results page"
+        "--static", action="store_true", help="package the free static product page"
     )
     args = parser.parse_args()
     package(Path(__file__).resolve().parents[2], args.output, static=args.static)

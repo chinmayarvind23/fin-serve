@@ -1,5 +1,5 @@
-# Frozen workloads and declared engine profiles
+# Serving workloads
 
-`text-release-v1.json` contains the 64 synthetic cases used by the recorded sustained comparison. The run configuration separately fixes repetition count, warmup, concurrency, timing mode and token budgets. Reusing this workload hash does not make a short development run equivalent to a 3,072-request sustained run.
+Freeze a workload and engine configuration before comparing candidates. Text workload entries define prompts and output budgets; engine JSON files declare runtime parameters. The finance YAML describes workload families.
 
-The vLLM/SGLang JSON files declare local runtime candidates. A filename or declaration does not prove that its engine launched or passed quality; retained process/readiness records and [results](../../docs/results.md) establish execution. The finance YAML describes workload families and intended evaluation dimensions, rather than the actual frozen release population. See [benchmark populations](../../docs/finance-benchmark-suite.md).
+Run collection with the [commands guide](../../docs/commands.md). Write generated artifacts outside the checkout. Preserve failed requests and verify every candidate with the [shared release gate](../../docs/quality-gates.md).

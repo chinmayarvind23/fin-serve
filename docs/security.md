@@ -1,6 +1,6 @@
 ﻿# Security boundaries
 
-FinServe currently uses separately configured service credentials and trusted operator processes. It does not implement the previously proposed five-role RBAC system. The public inference API and read-only explorer cannot invoke deployment operations; the release CLI/Airflow worker and its configured adapter hold that authority.
+FinServe currently uses separately configured service credentials and trusted operator processes. The public inference API and read-only explorer cannot invoke deployment operations; the release CLI/Airflow worker and its configured adapter hold that authority.
 
 ## Requests and ownership
 
@@ -20,7 +20,7 @@ Credentials remain in private process configuration, not images, manifests or br
 
 The Kubernetes text gateway enables `FINSERVE_REQUIRE_AUTH=1` in the gateway and Ray pod groups. Factories and each actor reject absent, empty, short, oversized or malformed credentials before allocating serving resources. Ingress, Ray-hop and engine keys have separate Secret references. This production requirement is opt-in for other local launches; an unauthenticated fixture does not become a protected deployment merely by having a health endpoint.
 
-Terraform and Helm define private data services, scoped workload identities, resource limits and NetworkPolicies. Those configurations have local validation evidence. Their enforcement, application secret provisioning, TLS and cloud service health remain unverified until deployment. The local SQLite stores do not imply a highly available production control plane.
+Terraform and Helm define private data services, scoped workload identities, resource limits and NetworkPolicies. Those configurations have local validation evidence. Verify policy enforcement, application secrets, TLS, and service health in the target deployment. The local SQLite stores do not imply a highly available production control plane.
 
 ## Data visibility
 

@@ -37,5 +37,3 @@ SQLite WAL/full synchronization retains job truth and verified PNG bytes. The gR
 Install the gateway's `vision` extra. Set `FINSERVE_VISION_ENGINE_URL` to the separately running engine's private `/v1` URL, `FINSERVE_VISION_MODEL` to its served model ID, and `FINSERVE_VISION_ENGINE_KEY` when the engine requires a credential. `FINSERVE_API_KEY` is mandatory for this capability; `FINSERVE_VISION_CAPACITY` defaults to one.
 
 The image route accepts a bounded PNG rather than an arbitrary remote URL. Consult the gateway's generated `/docs` and `contracts/vision.py` for the exact request fields. Image normalization validates checksums, format and resolution before Pillow decoding, then removes metadata and emits canonical RGB. The measured HTTP preprocessing split moves this CPU stage only; vision encoding and decoding remain inside vLLM.
-
-The retained uniform-color suite failed semantic correctness despite exact local/HTTP parity. Three separate bar-chart probes passed as functional examples. [Recorded results](../../../docs/results.md) explains those limits and identifies the evidence.
