@@ -1,6 +1,6 @@
 ﻿# Demo status and recording sequence
 
-The recorded video and GIF are pending browser visual verification and deployment. HTTP checks and DOM unit tests have passed for the explorer, but they are not a browser recording. Raw local evidence is retained outside the repository.
+The recorded video and GIF are pending browser visual verification. The [free static results Space](https://huggingface.co/spaces/chinmayarvind/finserve) is deployed and passes HTTPS asset checks. The full explorer passes local HTTP and DOM checks; these are not a browser recording. Raw local evidence is retained outside the repository. Use the [local setup guide](run-free.md) for the running application and GPU inference.
 
 The recording will show these implemented behaviors with visible run identities:
 

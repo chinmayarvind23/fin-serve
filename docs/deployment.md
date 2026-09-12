@@ -1,6 +1,6 @@
 ﻿# Deployment
 
-The repository has tested local services and validated AWS/Kubernetes configuration. Authenticated AWS/Hugging Face deployment is still pending. No public endpoint, billed GPU cost or cloud rollback result is claimed.
+The [free static Hugging Face Space](https://huggingface.co/spaces/chinmayarvind/finserve) is live. It serves measured aggregate results, not inference or an API. The full explorer and GPU engines run locally; follow the [free setup guide](run-free.md). AWS/Kubernetes configuration is validated but not deployed. No billed GPU cost or cloud rollback result is claimed, and paid hosting is outside the current deployment scope.
 
 ## Local runtime
 
@@ -14,14 +14,23 @@ completed replay checks the existing start without creating a replacement.
 The local cold-start proof took 152.970 seconds and verified reconciliation and
 cleanup. That measurement is distinct from warm rollback.
 
-## Hugging Face CPU Space
+## Hugging Face and local explorer
 
 The [Space package](../infra/huggingface/README.md) reuses the Bun explorer and
 Python read service. An explicit allowlist includes source, locks and six committed
 aggregate assets. Its public landing page states the failed quality gate; the
 authenticated registry starts empty on ephemeral storage. Local container checks
-cover actual HTTP, auth/body limits and normal/faulted child shutdown. Hosted
-upload and browser visual verification remain pending.
+cover actual HTTP, auth/body limits and normal/faulted child shutdown. The account's
+Docker Space creation request returned HTTP 402 requiring PRO, so this container
+remains a local option. No subscription or paid hardware was provisioned.
+
+The separate `--static` package was uploaded from source commit `16d9794` to Space
+commit `cce3ea8af83a1f31cc6960c802e028187e718490`. Hugging Face reports `RUNNING`.
+Actual HTTPS checks verified the CSS and all six aggregate assets byte-for-byte.
+The HTML matches the uploaded source after removing the single observed
+Hugging Face creator-variable injection. The static site includes no private
+request records, credentials, registry, backend or model weights. Browser visual
+verification remains pending.
 
 ## AWS and Kubernetes
 

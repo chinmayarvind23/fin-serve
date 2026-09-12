@@ -85,6 +85,31 @@ The engine exited before readiness, so this attempt produced **zero quality requ
 
 The failed container's inspection and complete logs were retained before its exact identity was removed. No larger-memory retry ran while the competing workload was active. The input review and successful image build verify preparation only; structured generation, correctness and compilation overhead remain unmeasured in this arm.
 
+## Structured-output retry after an idle preflight
+
+`structured-quality-arm-02` reused the exact model, image, profile, suites and
+prompt-derived format map from arm01. GPU memory fraction remained 0.45. A fresh
+preflight observed 0 MiB used and no compute processes before launch; new stage
+identities preserve the failed attempt. Managed readiness completed in 188.19
+seconds and all 56 quality requests succeeded. The preflight is not an exclusive
+GPU reservation; a later device-wide sample recorded 7,618 MiB used during
+collection. No isolated utilization or latency comparison is claimed.
+
+| Consumed regression population | Successful HTTP requests | Correct answers |
+| --- | ---: | ---: |
+| Release suite | 32/32 | 26/32 (81.25%) |
+| Historical four-case holdout | 4/4 | 4/4 (100%) |
+| Previously consumed twenty-case holdout | 20/20 | 17/20 (85%) |
+
+The release and twenty-case gates still failed. These scores compare raw outputs
+against the unchanged expected answers; they are not model-to-model parity or
+fresh holdout estimates. No output repair or performance comparison was applied.
+The engine logged a first-use Triton bitmask kernel compilation warning; its
+isolated compilation cost was not measured. Exact launch and stop receipts bind
+the actual container, which was stopped and removed after collection. This retry
+establishes that the original configuration can serve structured requests on the
+local device; it does not prove a unique cause for the earlier startup failure.
+
 ## Multimodal evidence
 
 Pinned Qwen2-VL-2B-Instruct revision `895c3a49bc3fa70a340399125c650a463535e71c` runs through the actual image/text adapter. The final uniform-color preprocessing comparison retained 36 successful requests and 18/18 exact local/HTTP output pairs, but 0/36 correct color answers. The rejected semantic result remains in `vision-stage-run-03-final`; earlier fp16 and bf16 cohorts also remain.

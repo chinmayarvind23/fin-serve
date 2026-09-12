@@ -121,10 +121,10 @@ disk capacity and local GPU memory are the practical requirements for this path.
 uv run --no-sync python infra/huggingface/package.py --static --output /absolute/outside/repo/static-space
 uvx --from huggingface_hub hf auth login
 uvx --from huggingface_hub hf repos create your-account/finserve --type space --space-sdk static
-uvx --from huggingface_hub hf upload your-account/finserve /absolute/outside/repo/static-space --type space
+uv run --isolated --no-project --with huggingface_hub python -c 'from huggingface_hub import HfApi; HfApi().upload_folder(repo_id="your-account/finserve", repo_type="space", folder_path="/absolute/outside/repo/static-space")'
 ```
 
-The package includes one HTML page, CSS, six committed aggregate files, a Space
+The SDK upload updates the already-created static Space directly. The package includes one HTML page, CSS, six committed aggregate files, a Space
 README and a file-hash manifest. It contains no credentials, request records,
 model weights or backend. [Static Spaces](https://huggingface.co/docs/hub/en/spaces-sdks-static)
 use `sdk: static` and `app_file: index.html`. Keep the Docker package for local use

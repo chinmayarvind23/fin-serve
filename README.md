@@ -23,6 +23,8 @@ Token throughput increased **2.64×**, while median TTFT worsened. Exact output 
 
 A later image-bound Qwen2.5-1.5B diagnostic with explicit chat-role mapping scored 18/32 on the unchanged release suite and 13/20 on a separately frozen format holdout. All requests completed, but correctness still failed. This separate experiment does not change the sustained comparison above.
 
+A subsequent structured-output diagnostic completed all 56 requests and improved correctness to 26/32 on the release suite and 17/20 on the now-consumed holdout. Its release gate still failed; no paired performance gain or model-to-model parity is claimed.
+
 ![Sustained comparison: faster throughput and lower p95, worse TTFT, and a failed correctness gate](docs/assets/sustained-comparison.png)
 
 ## Current capabilities
@@ -39,6 +41,8 @@ A later image-bound Qwen2.5-1.5B diagnostic with explicit chat-role mapping scor
 ## Run locally
 
 For the complete explorer and local GPU setup, follow [Run FinServe without paid hosting](docs/run-free.md). The explorer needs no GPU; real inference uses your local NVIDIA device. Kubernetes is optional for local use.
+
+Browse the [live free results page on Hugging Face](https://huggingface.co/spaces/chinmayarvind/finserve) for the public figures. It is a static site, not an inference endpoint.
 
 Python 3.12, uv and Bun 1.3.10 are the tested development tools. Run the transport fixture first:
 
