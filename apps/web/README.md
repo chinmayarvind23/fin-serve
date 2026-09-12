@@ -2,7 +2,7 @@
 
 The Bun website compares registered serving runs through a read-only GraphQL service. It shows measured throughput, latency, workload slices, GPU coverage, failed quality gates, raw request pages and lifecycle history. It never deploys from the browser. Unregistered evidence is absent; missing measurements display as unknown.
 
-Install `uv sync --extra explorer` and `bun install --frozen-lockfile`. The initial service supports a local SQLite registry and a `LocalArtifactStore` outside this repository. Import a completed experiment with the same immutable native identities used during measurement:
+Install `uv sync --frozen --extra explorer` and `bun install --frozen-lockfile`. The initial service supports a local SQLite registry and a `LocalArtifactStore` outside this repository. Import a completed experiment with the same immutable native identities used during measurement:
 
 ```sh
 uv run --no-sync python -m finserve.registry.annotations \
@@ -23,6 +23,6 @@ uv run --no-sync uvicorn finserve.registry.explorer:from_env --factory --host 12
 
 In another terminal, set the same internal `FINSERVE_API_KEY`, a different `FINSERVE_WEB_KEY`, and optionally `FINSERVE_EXPLORER_UPSTREAM` (default `http://127.0.0.1:8050`). Run `bun run start:web`, visit `http://127.0.0.1:8051`, and enter the web key. Keys remain process configuration and browser memory; no key is embedded in the bundle or local storage. Both listeners default to loopback. An external deployment requires authenticated TLS ingress.
 
-`bun run build:web` produces `dist/web/server.js` and its bundled assets. Keep the complete output directory together. `FINSERVE_WEB_HOST` and `FINSERVE_WEB_PORT` configure the web listener. The GraphQL endpoint accepts POST only, with a 16 KiB body, a four-request capacity limit, bounded query shape and verified artifact reads. The edge allows only `/graphql`, injects the internal credential, and rejects responses exceeding 2 MiB. Native file reads cannot be forcibly interrupted; the read service retains capacity until its worker drains.
+`bun run build:web` produces `dist/web/server.js` and its bundled assets. Run `bun dist/web/server.js` from the repository root and keep the complete output directory together. The entrypoint anchors asset lookup to its own directory because the Bun 1.3.10 HTML manifest contains relative asset paths. This uses Bun's [entrypoint directory metadata](https://bun.sh/docs/runtime/module-resolution) with its [full-stack HTML build](https://bun.sh/docs/bundler/fullstack). `FINSERVE_WEB_HOST` and `FINSERVE_WEB_PORT` configure the web listener. The GraphQL endpoint accepts POST only, with a 16 KiB body, a four-request capacity limit, bounded query shape and verified artifact reads. The edge allows only `/graphql`, injects the internal credential, and rejects responses exceeding 2 MiB. Native file reads cannot be forcibly interrupted; the read service retains capacity until its worker drains.
 
 The website loads up to 20 registered runs and pages individual request records. The API also supports a stable `after` cursor for run lists. The browser does not export private artifacts or issue GraphQL mutations. Browser visual review is separate from the HTTP contract tests.

@@ -2,6 +2,10 @@
 import { createProxy } from "../api/proxy";
 import home from "./index.html";
 
+// Bun's production HTML manifest resolves emitted assets from the process directory.
+// Anchor it to this entrypoint so launches from another directory find the same bundle.
+process.chdir(import.meta.dir);
+
 const proxy = createProxy({
   upstream: process.env.FINSERVE_EXPLORER_UPSTREAM ?? "http://127.0.0.1:8050",
   apiKey: process.env.FINSERVE_WEB_KEY ?? "",
