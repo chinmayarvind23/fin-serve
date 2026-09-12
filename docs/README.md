@@ -8,6 +8,7 @@ FinServe combines GPU inference, reproducible measurement and automated release 
 | Understand the measured improvements | [Results](results.md), [benchmark methodology](benchmark-methodology.md) |
 | Explain the architecture and state placement | [HLD](HLD.md), [LLD](LLD.md), [system design](system-design.md) |
 | Defend the technology choices | [Architecture alternatives](architecture-alternatives.md), [decision records](adr/) |
+| Trace every stack item and resume target | [Stack and claim verification](stack-verification.md) |
 | Follow streaming, routing and cancellation | [API contracts](api-contracts.md), [scheduling and batching](scheduling-and-batching.md) |
 | Explain evaluation, promotion and rollback | [Quality gates](quality-gates.md), [Airflow pipeline](airflow-pipeline.md), [failure modes](failure-modes.md) |
 | Deploy and observe the system | [Deployment](deployment.md), [observability](observability.md), [security](security.md) |

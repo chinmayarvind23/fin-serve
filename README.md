@@ -6,6 +6,8 @@ FinServe runs text and image inference, compares serving configurations, and aut
 
 [Live results and charts](https://huggingface.co/spaces/chinmayarvind/finserve) | [Run locally](docs/run-free.md) | [Design guide](docs/README.md) | [Resume bullets](docs/resume-bullets.md)
 
+[Trace the full stack and measured claims to code and verification](docs/stack-verification.md).
+
 ## Results at a glance
 
 | Experiment | Measured result | What it establishes |

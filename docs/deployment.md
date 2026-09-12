@@ -24,13 +24,15 @@ cover actual HTTP, auth/body limits and normal/faulted child shutdown. The accou
 Docker Space creation request returned HTTP 402 requiring PRO, so this container
 remains a local option. No subscription or paid hardware was provisioned.
 
-The separate `--static` package was uploaded from source commit `16d9794` to Space
+The initial separate `--static` package was uploaded from source commit `16d9794` to Space
 commit `cce3ea8af83a1f31cc6960c802e028187e718490`. Hugging Face reports `RUNNING`.
 Actual HTTPS checks verified the CSS and all six aggregate assets byte-for-byte.
 The HTML matches the uploaded source after removing the single observed
 Hugging Face creator-variable injection. The static site includes no private
-request records, credentials, registry, backend or model weights. Browser visual
-verification remains pending.
+request records, credentials, registry, backend or model weights. Subsequent desktop/mobile
+browser checks passed. The latest presentation package uses source `c97ba2a` and Space
+commit `1fb68b78488bf4fb41f5b417ca2a037800e52668`; its historical chart label was verified
+over HTTPS. It leads with the later passed GPU release and preserves historical outcomes.
 
 ## AWS and Kubernetes
 
@@ -48,4 +50,4 @@ The shared release gate verifies immutable identities and recomputes quality/per
 
 The implemented warm-route controller switches already-running endpoints with expected revision/generation checks. In-flight requests retain their original backend. Readiness requires a successful inference stream and exact revision verification after cutover. The local fixture drill measured 0.680 seconds from detection to verified recovery; it excludes image pulls, weight loads and node replacement. A separate cold/cloud experiment is required to assess the 94-second target.
 
-Replica scaling, engine process capacity and GPU node scaling require separate evidence. Multi-engine capacity experiments and the artifact-bound end-to-end lifecycle are in progress. Current [results](results.md) identify the scope of completed checks.
+Replica scaling, engine process capacity and GPU node scaling require separate evidence. The artifact-bound local GPU lifecycle and automatic one-to-two-to-one model-engine capacity both passed. The capacity stimulus retained overload failures; AWS node scaling remains an optional unverified deployment path. Current [results](results.md) identify the scope of completed checks.

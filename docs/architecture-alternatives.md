@@ -10,7 +10,7 @@
 | Fully split vision encoding and decoding | Measured CPU normalization split only | Actual HTTP transfer was compared with local normalization. Encoder/decode separation has not been demonstrated. |
 | Put GraphQL in inference scheduling | Separate bounded read-only evidence service | Nested run/quality/history views are useful without adding registry reads to every token. |
 | Use MLflow labels as release authority | Immutable SQL/CAS records and a recomputed gate | MLflow is a reporting mirror; cross-store reconciliation becomes explicit. |
-| Put Airflow in online requests | Offline evidence and lifecycle tasks | Request latency does not depend on the orchestration scheduler. Full producer integration remains separate work. |
+| Put Airflow in online requests | Offline evidence and lifecycle tasks | Request latency does not depend on the orchestration scheduler. The full local GPU producer workflow passed, including gates, deployment, probation and cleanup. |
 | Use a single-GPU update as a warm canary | Explicit disruptive staging update; separate warm-route controller | Local warm switching is tested, but overlapping cloud versions need additional capacity and deployment evidence. |
 
 These choices are implemented at the scopes described in the [HLD](HLD.md), [LLD](LLD.md) and [results](results.md). Additional databases, queues or engine backends should be introduced only for a measured requirement; their presence alone would not improve the current evidence.

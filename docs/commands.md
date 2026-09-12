@@ -84,3 +84,19 @@ Run the baseline without `--reference` first. Retain its answers and invalid out
 - [Terraform](../infra/terraform/README.md) and [Kubernetes](../infra/kubernetes/README.md): foundation and workload commands, prerequisites and current deployment limits.
 
 These service guides identify their actual paths and required configuration. A passing local fixture or Terraform mock test does not establish a deployed cloud service.
+
+## Export verified release evidence to MLflow
+
+Install the registry extra with `uv sync --locked --extra registry`. Create a local MLflow experiment with an explicit artifact location, then export an existing candidate run and its recorded decision:
+
+```sh
+uv run python -m finserve.registry.mlflow_cli \
+  --registry-url "$FINSERVE_REGISTRY_URL" \
+  --artifact-root "$FINSERVE_ARTIFACT_ROOT" \
+  --run-id "$FINSERVE_RUN_ID" \
+  --decision-digest "$FINSERVE_DECISION_DIGEST" \
+  --tracking-uri "$MLFLOW_TRACKING_URI" \
+  --experiment-id "$MLFLOW_EXPERIMENT_ID"
+```
+
+The command prints the actual MLflow run ID after verified artifact upload. It refuses a decision that belongs to a different run. MLflow receives a copy of evidence; the command does not promote, deploy or change a release gate. Export only to a tracking destination authorized to receive the raw request artifacts. See [stack verification](stack-verification.md).

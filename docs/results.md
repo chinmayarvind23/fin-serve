@@ -10,6 +10,8 @@ Both arms used Qwen2.5-3B-Instruct-AWQ, eager vLLM 0.29.0, four sequences and an
 
 These are consumed release cases, not a fresh holdout or general quality guarantee. The short comparison does not replace the sustained throughput experiment or establish a production SLA. Earlier broad quality failures remain unresolved evidence. The local release result does not establish an AWS deployment.
 
+The successful GPU release also passed an operator-driven export to local MLflow. The [receipt](assets/mlflow-release-verification.json) records the finished tracking run and byte-verified artifact readback. This is evidence integration, not another benchmark or deployment.
+
 ## Verified automatic local capacity cycle
 
 `capacity-gpu-producer-05` enrolled the canonically approved primary, detected serving load, started one equivalent GPU engine, routed requests to both, then naturally downscaled after load ended. The final controller state is closed with no error, no unresolved extra-replica obligations and a completed exact stop receipt. Independent inspection confirmed the extra container was removed; the borrowed primary was explicitly removed after the experiment.
