@@ -102,6 +102,6 @@ The GIF below comes from an actual Chromium walkthrough of the local evidence ex
 
 **Product:** expand chart reasoning beyond three functional probes and improve exact-format correctness before accepting an optimized release.
 
-**Architecture:** complete artifact-bound runtime production and extend the verified local two-engine path to multiple GPUs and cloud scaling. Cloud deployment and hosted observability remain pending; the text trace chain passes actual Ray/HTTP integration checks.
+**Architecture:** finish end-to-end acceptance of the implemented artifact-bound runtime producer, then extend the verified local two-engine path to multiple GPUs. The first real Airflow run reached a healthy engine but failed during pre-collection model verification; its owned runtime cleanup passed. AWS deployment remains an optional user-run path. The text trace chain passes actual Ray/HTTP integration checks.
 
 **Engineering:** repeat and randomize paired measurements, distinguish physical GPU telemetry from per-engine cache occupancy, measure real billed cost, and exercise node/process loss separately from warm route rollback. These remaining checks are tracked explicitly rather than inferred from passing unit tests.
