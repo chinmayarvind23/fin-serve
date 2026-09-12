@@ -1,28 +1,36 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>FinServe Ã‚Â· Measured serving results</title>
+<meta name="referrer" content="no-referrer"><title>FinServe | Faster inference. Verified releases.</title>
 <link rel="stylesheet" href="./landing.css"></head><body><main>
-<p class="eyebrow">FINSERVE / MEASURED RESULTS</p><h1>Serving results, with their limits attached.</h1>
-<p class="lead">FinServe measures text and image inference, retains failed requests, and checks quality before promoting a serving configuration.</p>
-<div class="notice"><strong>This is a static results page.</strong> The measurements below came from a local RTX 4070 Laptop GPU. This Space runs no model, API or evidence registry. The full application can run on your own computer without a paid hosting subscription.</div>
-<p><a class="button" href="./local.html">Run FinServe locally Ã¢â€ â€™</a></p>
-<section aria-labelledby="latest-correctness"><p class="eyebrow">LATEST COMPLETED CORRECTNESS</p><h2 id="latest-correctness">Release suite passed; broader checks continue</h2>
-<p>The latest completed 3B quantized candidate served all <strong>56/56 HTTP requests</strong>. Correct answers are shown below; HTTP completion alone does not establish answer quality.</p>
-<div class="quality-cards">
-<article class="quality-card"><h3>Release cohort</h3><p class="quality-score">32/32 <span>100%</span></p><meter min="0" max="32" value="32" aria-label="Release cohort: 32 of 32 answers correct, 100 percent">32/32</meter><p>Previous completed run: 26/32 (81.25%).</p></article>
-<article class="quality-card"><h3>Historical cohort</h3><p class="quality-score">3/4 <span>75%</span></p><meter min="0" max="4" value="3" aria-label="Historical cohort: 3 of 4 answers correct, 75 percent">3/4</meter><p>Four previously consumed regression cases.</p></article>
-<article class="quality-card"><h3>Consumed holdout</h3><p class="quality-score">17/20 <span>85%</span></p><meter min="0" max="20" value="17" aria-label="Consumed holdout: 17 of 20 answers correct, 85 percent">17/20</meter><p>Previous ChatML arm: 13/20 (65%).</p></article>
-</div>
-<p class="qualification"><strong>Four additional regression errors remain.</strong> The 32-case release correctness check passed, but the additional checks still failed. The candidate is not fully qualified. All three cohorts are consumed regression evidence. The holdout is no longer fresh, and these results establish neither fresh-holdout performance nor quality parity.</p>
-<div class="notice"><strong>A stronger candidate is being tested.</strong> Its results will appear here after verification. The figures above are from the last completed run.</div>
-</section>
-<section><p class="eyebrow">HISTORICAL SUSTAINED TEXT MEASUREMENT</p><h2>Baseline and compiled serving</h2>
-<p>The retained comparison covers 6,144 measured requests, with separate warmups. Token throughput increased 2.64Ãƒâ€” and p95 latency fell, while median TTFT worsened. The candidate failed its quality gate. These results do not establish production availability or cloud cost savings.</p>
-<a href="./public-results/sustained-comparison.png"><img src="./public-results/sustained-comparison.png" alt="Baseline and compiled serving measurements, including worse TTFT and failed quality qualification"></a>
-<p><a href="./public-results/sustained-comparison.json">Aggregate metadata (JSON)</a> Ã‚Â· <a href="./public-results/sustained-comparison.svg">Vector figure (SVG)</a></p></section>
-<section><p class="eyebrow">HISTORICAL DEVELOPMENT CURVE / FAILED QUALITY QUALIFICATION</p><h2>Concurrency changes the tradeoff</h2>
-<p>Four short, sequential 256-request cohorts varied client concurrency. Historical source files lack byte attestation, and the separate quality cohort failed. These points do not identify a production optimum or an approved release.</p>
-<a href="./public-results/concurrency-frontier.png"><img src="./public-results/concurrency-frontier.png" alt="Concurrency frontier with throughput, latency and measurement limitations"></a>
-<p><a href="./public-results/concurrency-frontier.json">Aggregate metadata (JSON)</a> Ã‚Â· <a href="./public-results/concurrency-frontier.svg">Vector figure (SVG)</a></p></section>
-<footer><a href="./local.html">Local setup instructions</a> Ã‚Â· <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (repository access required)</a><p>Only public aggregate figures are included. Private request records, model weights and credentials are absent. Measurement scope and definitions are included in the aggregate metadata above.</p></footer>
+<nav aria-label="Main navigation"><a class="brand" href="./index.html">FIN<span>SERVE</span></a><div><a href="#performance">Performance</a><a href="#quality">Correctness</a><a href="./local.html">Local setup</a></div></nav>
+<header class="hero"><p class="eyebrow">GPU INFERENCE / MEASUREMENT / RELEASE CONTROL</p><h1>Faster inference.<br><span>Evidence for every release.</span></h1>
+<p class="lead">FinServe connects GPU serving, distributed routing and automated quality gates. Compare configurations, inspect the requests behind the numbers, and catch regressions before promotion.</p>
+<div class="actions"><a class="button" href="./local.html">Run FinServe locally</a><a href="#performance">Explore the measurements</a></div>
+<p class="muted hosting">Free public results site. Run the full explorer and GPU inference on your own hardware.</p></header>
+<section id="performance"><p class="eyebrow">MEASURED ON AN RTX 4070 LAPTOP GPU</p><h2>More tokens. Shorter tail latency.</h2>
+<p class="section-intro">A sustained eager-versus-compiled vLLM comparison used the same frozen workload, with 3,072 measured requests per configuration and separate warmups.</p>
+<div class="metrics"><article class="metric"><span>Token throughput</span><strong>2.64<span>x</span></strong><p>373.52 to 987.54 tokens/s</p></article>
+<article class="metric"><span>Lower p95 latency</span><strong>62.3<span>%</span></strong><p>2.131 s to 0.804 s</p></article>
+<article class="metric"><span>Measured requests completed</span><strong>6,144<span>/6,144</span></strong><p>Across both configurations</p></article></div>
+<div class="comparison"><div class="comparison-heading"><h3>Throughput at the same client concurrency</h3><span>Generated tokens / second</span></div>
+<div class="bar-row"><span>Eager baseline</span><div class="track"><div class="bar baseline" style="width:37.82%"></div></div><strong>373.52</strong></div>
+<div class="bar-row"><span>Compiled serving</span><div class="track"><div class="bar optimized" style="width:100%"></div></div><strong>987.54</strong></div>
+<p class="chart-note">Linear scale from zero. Same pinned 0.5B model and workload; concurrency 16.</p></div>
+<p class="qualification"><strong>Performance experiment, not a qualified release.</strong> This historical candidate failed its separate quality check. Median server TTFT rose from 105.30 to 128.57 ms. One ordered local comparison does not establish production availability or cloud cost savings. The newer correctness results below are a separate experiment.</p>
+<p class="evidence-links"><a href="./public-results/sustained-comparison.json">View measurement data</a><a href="./public-results/sustained-comparison.svg">Full comparison figure</a></p></section>
+<section><p class="eyebrow">BUILT BEYOND THE BENCHMARK</p><h2>A serving system you can inspect.</h2>
+<div class="features"><article><span class="step">01 / SERVE</span><h3>GPU engines, bounded admission</h3><p>vLLM and SGLang adapters connect to FastAPI streaming. Ray routing tracks endpoint eligibility and request leases.</p></article>
+<article><span class="step">02 / MEASURE</span><h3>Keep the evidence</h3><p>Compare throughput, latency and GPU coverage in the explorer. Trace measurements to frozen workloads, artifact identities and retained request records.</p></article>
+<article><span class="step">03 / QUALIFY</span><h3>Make quality part of release control</h3><p>CLI and Airflow share a release gate. Failed checks block promotion; revision checks protect warm route rollback.</p></article></div></section>
+<section id="quality" aria-labelledby="latest-correctness"><p class="eyebrow">LATEST COMPLETED CORRECTNESS / 3B QUANTIZED CANDIDATE</p><h2 id="latest-correctness">32 of 32 release answers correct.</h2>
+<p class="section-intro">The release cohort improved from 26/32 (81.25%) to 32/32 (100%). All 56 requests completed across the three suites; the cards show answer correctness.</p>
+<div class="quality-cards"><article class="quality-card"><h3>Release cohort</h3><p class="quality-score">100% <span>32/32</span></p><meter min="0" max="32" value="32" aria-label="Release cohort: 32 of 32 answers correct">32/32</meter><p>Up 18.75 percentage points from the previous completed run.</p></article>
+<article class="quality-card"><h3>Historical regression</h3><p class="quality-score">75% <span>3/4</span></p><meter min="0" max="4" value="3" aria-label="Historical regression: 3 of 4 answers correct">3/4</meter><p>Four previously consumed regression cases.</p></article>
+<article class="quality-card"><h3>Expanded regression</h3><p class="quality-score">85% <span>17/20</span></p><meter min="0" max="20" value="17" aria-label="Consumed holdout: 17 of 20 answers correct">17/20</meter><p>Previously held-out cases; now used as regression evidence.</p></article></div>
+<p class="qualification"><strong>Four regression errors remain, so full qualification is still pending.</strong> All three suites have been consumed. These scores do not establish fresh-holdout performance or quality parity. A stronger candidate is being tested; only verified, completed results appear here.</p></section>
+<section class="archive"><p class="eyebrow">EXPERIMENT ARCHIVE</p><h2>Explore the concurrency tradeoff.</h2><p>Four sequential 256-request development cohorts compare throughput and latency as client concurrency changes. These historical runs failed separate quality qualification and lack source-byte attestation; they do not identify an approved production setting.</p>
+<details><summary>Open the historical concurrency figure</summary><a href="./public-results/concurrency-frontier.png"><img loading="lazy" src="./public-results/concurrency-frontier.png" alt="Historical concurrency measurements with throughput, latency and experiment limitations"></a></details>
+<p class="evidence-links"><a href="./public-results/concurrency-frontier.json">Measurement data</a><a href="./public-results/concurrency-frontier.svg">Vector figure</a></p></section>
+<section class="get-started"><div><p class="eyebrow">RUN IT YOURSELF</p><h2>Start with the evidence explorer.</h2><p>The explorer runs on CPU. Add your own NVIDIA GPU for inference. Local setup needs no paid hosting subscription.</p></div><a class="button" href="./local.html">Run FinServe locally</a></section>
+<footer><a class="brand" href="./index.html">FIN<span>SERVE</span></a><p>This Hugging Face Space hosts static public results; no model, API or registry runs here. Raw private records, weights and credentials stay outside the public bundle.</p><p><a href="./local.html">Local setup instructions</a> &middot; <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (repository access required)</a></p></footer>
 </main></body></html>

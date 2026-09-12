@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>Run FinServe locally</title>
 <link rel="stylesheet" href="./landing.css"></head><body><main>
-<p><a href="./index.html">← Measured results</a></p>
+<p><a href="./index.html">Back to Measured results</a></p>
 <p class="eyebrow">FINSERVE / LOCAL SETUP</p><h1>Run the full application on your computer.</h1>
 <p class="lead">The evidence explorer needs no GPU. Real text inference uses your own NVIDIA GPU. Neither path needs a paid hosting subscription or Kubernetes.</p>
 <div class="notice"><strong>Source access:</strong> the GitHub repository is private. Sign in with an account that has access before cloning. The public Space contains results and these instructions; it does not grant access to the source. A GitHub 404 can mean you are signed out or lack access.</div>
@@ -31,5 +31,5 @@ uv run --no-sync python scripts/check_gpu.py</code></pre>
 <pre><code>docker stop $finserveExplorerId
 docker rm $finserveExplorerId
 Remove-Item Env:FINSERVE_API_KEY, Env:FINSERVE_WEB_KEY</code></pre></section>
-<footer><a href="./index.html">Back to measured results</a> · <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (access required)</a></footer>
+<footer><a href="./index.html">Back to measured results</a> &middot; <a href="https://github.com/chinmayarvind23/fin-serve" target="_blank" rel="noopener noreferrer">GitHub source (access required)</a></footer>
 </main></body></html>
