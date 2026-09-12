@@ -1,4 +1,4 @@
-"""Expose the measured alternative through exactly the same request and accounting path."""
+"""Expose an alternative engine through the shared request and accounting contract."""
 
 from finserve.engines.openai_adapter import OpenAICompletionEngine
 

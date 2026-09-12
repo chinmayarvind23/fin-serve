@@ -15,6 +15,7 @@ from test_promotion import artifact
 from finserve.registry.artifacts import S3ArtifactStore, S3Client
 from finserve.registry.lifecycle import LifecycleService
 from finserve.registry.mlflow import client_for_uri, mirror_run
+from finserve.registry.mlflow_cli import run_cli
 
 
 def test_boto3_s3_conditional_write_contract() -> None:
@@ -59,7 +60,9 @@ def test_boto3_s3_conditional_write_contract() -> None:
         stubber.assert_no_pending_responses()
 
 
-async def test_real_local_mlflow_evidence_mirror(tmp_path: Path) -> None:
+async def test_real_local_mlflow_evidence_mirror(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Exercise actual MLflow APIs with explicitly synthetic metric fixtures."""
     module = pytest.importorskip("mlflow")
     registry, artifacts, specification, _ = registered(tmp_path)
@@ -72,14 +75,26 @@ async def test_real_local_mlflow_evidence_mirror(tmp_path: Path) -> None:
             "FinServe local integration fixture",
             artifact_location=(tmp_path / "mlflow-artifacts").as_uri(),
         )
-        run_id = mirror_run(
-            registry,
-            artifacts,
-            specification.candidate_run_id,
-            registry.decision(state.decision_digest),
-            client_for_uri(uri),
-            experiment,
+        capsys.readouterr()
+        run_cli(
+            [
+                "--registry-url",
+                "sqlite:///" + str(tmp_path / "registry.db"),
+                "--artifact-root",
+                str(tmp_path / "objects"),
+                "--run-id",
+                specification.candidate_run_id,
+                "--decision-digest",
+                state.decision_digest,
+                "--tracking-uri",
+                uri,
+                "--experiment-id",
+                experiment,
+            ]
         )
+        output = capsys.readouterr().out
+        run_id = output.strip()
+        assert output == run_id + "\n"
         actual = sdk.get_run(run_id)
         assert actual.info.status == "FINISHED"
         assert actual.data.metrics["candidate_accuracy"] == 1

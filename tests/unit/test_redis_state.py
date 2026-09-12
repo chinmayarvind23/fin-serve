@@ -139,7 +139,10 @@ async def test_gateway_deadline_includes_quota_and_expired_body() -> None:
         result = await client.post(
             "/v1/completions", json={"prompt": "hello", "timeout_seconds": 0.005}
         )
-    assert result.status_code == 504 and backend.closed
+    assert result.status_code == 504
+    # Parsing can consume this tiny budget before quota starts on a busy host.
+    # If quota did start, timeout must still await its cancellation cleanup.
+    assert backend.calls == 0 or backend.closed
     calls = backend.calls
     response = await app.state.serving.quota_response("expired", time.perf_counter() - 1)
     assert response.status_code == 504 and backend.calls == calls
