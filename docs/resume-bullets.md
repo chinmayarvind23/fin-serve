@@ -3,7 +3,7 @@
 PyTorch, JAX/Flax, Ray Serve, vLLM/SGLang, Redis, FastAPI/gRPC, MLflow, Airflow, EKS/KubeRay, Terraform
 
 - Built a distributed text and multimodal inference platform with adaptive scheduling, continuous batching, GPU-aware routing, and speculative-decoding experiments; measured **2.64x higher token throughput** with compiled serving in local benchmarks.
-- Benchmarked **6,144 GPU inference requests with 100% completion** and cut **p95 latency by 62.3% (2.13 s to 0.80 s)** and reduced **median client TTFT from 247 ms to 116 ms** in a separate 512-request prefix-cache trial on a local RTX 4070 Laptop GPU.
+- Benchmarked **6,144 GPU inference requests with 100% completion**, reducing **p95 latency by 62.3% (2.13 s to 0.80 s)**; a separate 512-request prefix-cache trial reduced **median client TTFT from 247 ms to 116 ms** on a local RTX 4070 Laptop GPU.
 - Automated model evaluation, gated deployment, and warm rollback using MLflow and Airflow; added **EKS/KubeRay and Terraform infrastructure definitions** and verified platform behavior with **1,134 passing CPU tests**.
 
 ## Evidence for interviews

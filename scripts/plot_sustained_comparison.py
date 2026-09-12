@@ -68,8 +68,10 @@ def render(data: dict[str, Any], output: Path) -> None:
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11, "text.color": ink})
     figure, axes = plt.subplots(2, 3, figsize=(13.8, 8.6), facecolor=paper)
     figure.subplots_adjust(left=0.07, right=0.97, top=0.77, bottom=0.23, wspace=0.38, hspace=0.65)
-    figure.text(0.07, 0.94, "FINSERVE / MEASURED RESULTS", size=10, weight="bold", color=muted)
-    figure.text(0.07, 0.89, "Native text serving: performance and quality", size=23, weight="bold")
+    figure.text(0.07, 0.94, "FINSERVE / HISTORICAL EXPERIMENT", size=10, weight="bold", color=muted)
+    figure.text(
+        0.07, 0.89, "Historical compiled serving: speed and quality", size=23, weight="bold"
+    )
     figure.text(
         0.07,
         0.848,
@@ -159,13 +161,17 @@ def render(data: dict[str, Any], output: Path) -> None:
                 size=9,
             )
     quality = runs[1]["quality"]
-    verdict = "PASSED" if data["candidate_quality_gate_passed"] else "REJECTED"
+    verdict = (
+        "Historical gate passed"
+        if data["candidate_quality_gate_passed"]
+        else "Historical quality gate failed"
+    )
     figure.text(
         0.07,
         0.137,
         f"{verdict} · {quality['candidate_accuracy']:.2%} correctness / "
         f"{quality['parity']:.2%} baseline parity on {quality['case_count']} separate cases",
-        size=12,
+        size=10,
         weight="bold",
         color="#973928",
         bbox={"facecolor": "#f9eae5", "edgecolor": "none", "pad": 12},
@@ -187,6 +193,8 @@ def render(data: dict[str, Any], output: Path) -> None:
     )
     figure.savefig(output / "sustained-comparison.png", dpi=160, facecolor=paper)
     figure.savefig(output / "sustained-comparison.svg", facecolor=paper, metadata={"Date": None})
+    svg = output / "sustained-comparison.svg"
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
     plt.close(figure)
 
 

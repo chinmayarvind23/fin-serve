@@ -2,7 +2,9 @@
 
 The [49.48-second walkthrough](../../resources/fin_serve/evidence/final-walkthrough-01/finserve-walkthrough.mp4) combines the evidence explorer, CPU JAX/gRPC job, warm rollback, and actual pretrained text/image requests. The private MP4 preserves the original playback speed and each component's scope. Full decode passed; SHA256 is `94a3d610e8384b7d3e1b4c159412e063039e7091c33def184ff92f024dfb2ee9`.
 
-The evidence explorer now has actual Chromium recordings at 1440×1000 and 390×1000. The short, silent clips show the retained eager/compiled comparison, workload-slice selection, failed quality gate and expanded failure reasons. Browser checks passed for navigation, horizontal overflow and page errors; all four screenshots and a decoded video frame were visually reviewed. Authentication used a masked, ephemeral key and both owned CPU services stopped after capture.
+**The explorer GIF records a historical experiment.** Its rejected quality gate is not the status of the latest passed GPU release. See [current release evidence](results.md).
+
+The evidence explorer has Chromium recordings at 1440×1000 and 390×1000. The short, silent clips show the retained eager/compiled comparison, workload-slice selection, failed quality gate and expanded failure reasons. Browser checks passed for navigation, horizontal overflow and page errors; all four screenshots and a decoded video frame were visually reviewed. Authentication used a masked, ephemeral key and both owned CPU services stopped after capture.
 
 Private review artifacts are outside the repository at `resources/fin_serve/evidence/explorer-demo-02`: `walkthrough-1440.webm` (8.48 seconds), `walkthrough-390.webm` (7.84 seconds), four comparison/quality PNGs, and `recording-manifest.json`. The manifest binds the exact source snapshot, SQLite backup, run IDs and capture SHA256 hashes. Source HEAD was `27bd10ccf4b48a4e3a9d35d6d9a42c08cf95f368`; per-file hashes identify the captured worktree. The earlier namespace-check failure remains in `explorer-demo-01`.
 

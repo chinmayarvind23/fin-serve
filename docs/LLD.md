@@ -1,5 +1,7 @@
 # Low-level design
 
+This document explains the contracts and ownership rules behind the verified local GPU release and replica lifecycle. The [design guide](README.md) connects these details to the architecture, demo and [measured results](results.md).
+
 The source packages below are implemented. Runtime and acceptance limits are separated from the type contracts they exercise.
 
 ## Code map

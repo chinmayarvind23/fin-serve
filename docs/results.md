@@ -1,4 +1,4 @@
-# Recorded results
+# FinServe: verified releases and measured performance
 
 Raw artifacts remain in the private workspace `resources/fin_serve/evidence/`. This repository publishes the methods, workload and result summary. The short 3B prefix-cache release below passed its frozen correctness and performance gates; historical failed configurations remain documented separately.
 

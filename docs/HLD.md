@@ -1,5 +1,7 @@
 # High-level design
 
+The local GPU release and automatic replica lifecycle are verified. Start with the [design guide](README.md) for a reading path and [results](results.md) for the measured outcomes. Historical experiment failures and optional cloud deployment checks have separate scope.
+
 FinServe separates active inference, durable jobs, release control and evidence browsing. A slow registry query or an Airflow retry should not own an engine's token scheduler. Each boundary has its own admission, identity and failure semantics.
 
 ## Request paths and ownership

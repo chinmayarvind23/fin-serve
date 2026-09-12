@@ -1,6 +1,6 @@
 # ADR012: performance and quality must both pass
 
-Status: implemented; real rejected local candidates retained.
+Status: implemented; full local GPU release passed, with historical rejected candidates retained.
 
 Promotion recomputes summaries from all raw requests, verifies an unchanged workload/load envelope and checks a predeclared policy. Quality compares candidate outputs with reference outputs and frozen expected answers. A hard correctness failure cannot average away behind throughput or output agreement.
 

@@ -2,7 +2,11 @@
 
 The short 3B prefix-cache release passed the frozen correctness gate and full GPU lifecycle; historical failed candidates remain separate evidence. Measurements retain faster candidates that failed quality and routing cohorts that rejected most offered requests. [Recorded results](results.md) contains the central result table.
 
-## Current evidence
+## Latest passed release
+
+The full GPU Airflow workflow passed on the 3B AWQ candidate. A separate 512-request prefix-cache comparison reduced median client TTFT from 247 to 116 ms; the consumed release suite scored 32/32 with 100% baseline parity. Automatic one-to-two-to-one GPU engine capacity also passed its lifecycle check. [Results](results.md) retain the complete scope, overload outcomes and historical comparisons.
+
+## Historical performance experiments
 
 The sustained eager/compiled comparison used the same pinned Qwen2.5-0.5B model, one RTX 4070 Laptop GPU, concurrency 16 and 3,072 measured requests per configuration. Successful-request throughput rose from 12.99 to 34.59 requests/s and token throughput from 373.52 to 987.54 tokens/s. Client median TTFT worsened from 112.95 to 159.45 ms; successful-request end-to-end p95 fell from 2.131 to 0.804 seconds. The separate quality gate failed. One ordered pair leaves thermal and workstation confounds.
 

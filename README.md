@@ -1,35 +1,45 @@
 # FinServe
 
-FinServe is a text and image inference platform with a reproducible measurement and release-control path. It connects a Bun edge, FastAPI, separately managed GPU engines, Ray routing and durable visual jobs. An evidence explorer puts throughput, latency, failed quality checks and exact artifact identities in the same view.
+FinServe runs text and image inference, compares serving configurations, and automates GPU releases with quality gates, rollback and replica lifecycle control. It connects PyTorch and JAX/Flax workers, vLLM/SGLang engines, Ray routing, FastAPI/gRPC, Redis, MLflow and Airflow. Optional EKS/KubeRay and Terraform definitions support a user-run cloud deployment.
 
-A faster server can still return incorrect answers or lose work during cancellation. FinServe measures completed requests and engine-reported tokens, retains failures, and blocks promotion when its quality or identity checks fail.
+**Verified locally:** full GPU release workflow, automatic one-to-two-to-one engine scaling, a recorded text/image demo, and 1,134 passing CPU tests.
 
-## Measured results
+[Live results and charts](https://huggingface.co/spaces/chinmayarvind/finserve) | [Run locally](docs/run-free.md) | [Design guide](docs/README.md) | [Resume bullets](docs/resume-bullets.md)
 
-**Latest verified release:** the full GPU Airflow workflow passed, followed by automatic one-to-two-to-one engine capacity. A separate 512-request prefix-cache trial cut median client TTFT from **247 to 116 ms** and passed **32/32 consumed release cases**. [Release and capacity evidence](docs/results.md) distinguish this result from the sustained comparison and broader quality evaluations below.
+## Results at a glance
 
-A native RTX 4070 Laptop experiment compared eager and compiled vLLM 0.29.0 with pinned Qwen2.5-0.5B-Instruct weights. Each configuration retained 3,072 measured requests and 64 separate warmup requests against the same frozen workload at concurrency 16.
+| Experiment | Measured result | What it establishes |
+| --- | --- | --- |
+| Latest 3B prefix-cache release | **247 to 116 ms median client TTFT**, 512/512 measured requests completed | **53.1% lower client TTFT** in a short ordered local comparison |
+| Release correctness | **32/32 correct, 100% baseline parity** | Passed the consumed release suite and canonical deployment gate |
+| Historical sustained compiled serving | **2.64x token throughput**, **62.3% lower p95**, 6,144 measured requests completed | Speed improvement in a separate experiment whose quality gate failed |
+| Automatic model capacity | **1 to 2 to 1 real GPU engine processes** | Load-driven expansion, physical routing, durable drain and exact stop |
 
-| Measurement | Eager baseline | Compiled candidate |
-| --- | ---: | ---: |
-| Successful requests/s | 12.99 | 34.59 |
-| Generated tokens/s | 373.52 | 987.54 |
-| Median server TTFT | 105.30 ms | 128.57 ms |
-| End-to-end p95 | 2.131 s | 0.804 s |
-| Completed requests | 3,072/3,072 | 3,072/3,072 |
-| Time-weighted GPU utilization | 29.11% | 57.91% |
+These are separate experiments on an RTX 4070 Laptop GPU. The release suite is consumed regression evidence; broader quality checks still expose errors. The capacity stimulus retained overload failures. [Full results](docs/results.md) identify every population and limitation.
 
-Token throughput increased **2.64×**, while median TTFT worsened. Exact output agreement across the paired load requests was **80.70%**. A separate frozen 32-case exact/typed-JSON suite scored **31.25% correctness** and **75% baseline parity**, so the candidate **failed the quality gate**. These are native workstation observations with undeclared deployment images, one ordered pair and no cloud billing evidence. They do not establish production availability or GPU cost savings.
+## Verified release workflow
 
-[Results and limitations](docs/results.md) identify the retained evidence, rejected speculation experiment and multimodal checks. The original 94 requests/s, 99.2% parity, 81% utilization and 37% cost-reduction figures remain targets.
+```mermaid
+flowchart LR
+  Model[Pinned model and image] --> Measure[Collect quality and performance]
+  Measure --> Gate[Canonical release gates]
+  Gate --> Deploy[Deploy and acknowledge]
+  Deploy --> Observe[60 probation probes]
+  Observe --> Cleanup[Verify baseline cleanup]
+```
 
-A later image-bound Qwen2.5-1.5B diagnostic with explicit chat-role mapping scored 18/32 on the unchanged release suite and 13/20 on a separately frozen format holdout. All requests completed, but correctness still failed. This separate experiment does not change the sustained comparison above.
+The complete workflow passed with real Docker GPU engines. The subsequent capacity controller started an equivalent extra engine under load, served requests on both engines, and removed the extra only after its streams drained. Generation checks and immutable artifact identities protect deployment and rollback decisions.
 
-A subsequent structured-output diagnostic completed all 56 requests and improved correctness to 26/32 on the release suite and 17/20 on the now-consumed holdout. Its release gate still failed; no paired performance gain or model-to-model parity is claimed.
+<details>
+<summary>Historical benchmark charts and rejected experiments</summary>
 
-The latest 7B AWQ candidate answered **55/56 consumed regression cases correctly (98.2%)**: 32/32 release, 4/4 historical and 19/20 expanded cases. One time-comparison error remains. A subsequent independent evaluation of the unchanged selected 7B configuration scored **42/48 (87.5%)**, with all requests completed. That quality gate failed. These correctness runs establish no new throughput gain or model-to-model parity. The public results page presents each experiment with its own scope.
+The compiled 0.5B experiment increased generated tokens/s from 373.52 to 987.54 and reduced p95 from 2.131 to 0.804 seconds. Median server TTFT worsened from 105.30 to 128.57 ms, and its separate quality gate failed. Its status belongs to that historical configuration, not the later passed 3B release.
 
-![Sustained comparison: faster throughput and lower p95, worse TTFT, and a failed correctness gate](docs/assets/sustained-comparison.png)
+![Historical compiled-serving experiment: speed gains and a failed quality gate](docs/assets/sustained-comparison.png)
+
+The separate 7B study scored 55/56 consumed regression cases and 42/48 independently frozen verification cases; the latter failed its gate. Speculation and other rejected optimizations remain in the [experiment archive](docs/results.md).
+
+</details>
 
 ## Current capabilities
 
@@ -97,9 +107,14 @@ Engines own batching, model execution and GPU memory. Ray owns routing leases. R
 - [Multimodal implementation](src/finserve/multimodal/README.md)
 - [Deployment](docs/deployment.md) and [demo status](docs/demo.md)
 
-The GIF below comes from an actual Chromium walkthrough of the local evidence explorer. The complete private 49.48-second walkthrough also includes a real CPU JAX/gRPC visual job, HTTP warm rollback with synthetic backends, and actual pretrained text/image responses through Bun and FastAPI. [Capture scope and video details](docs/demo.md).
+The archived GIF below records the historical evidence explorer. Its rejection status belongs to that recorded experiment. The complete private 49.48-second walkthrough also includes a real CPU JAX/gRPC visual job, HTTP warm rollback with synthetic backends, and actual pretrained text/image responses through Bun and FastAPI. [Capture scope and video details](docs/demo.md).
 
-![Actual FinServe explorer: historical serving comparison followed by the failed quality gate](docs/assets/explorer-demo.gif)
+<details>
+<summary>Watch the historical explorer recording</summary>
+
+![Historical explorer recording: this older candidate failed its quality gate](docs/assets/explorer-demo.gif)
+
+</details>
 
 The full local CPU suite on `66b5501` passed **1,134 tests**, with **49 skipped** and **88.20% combined statement/branch coverage**, above the unchanged 85% gate. The skips cover unavailable Helm/schema tools, Airflow and opt-in live Ray/Redis checks; this result is not a hosted CI or GPU acceptance claim. The capacity integration tests ran and passed. Aggregate coverage does not establish every subsystem's stricter coverage target.
 
