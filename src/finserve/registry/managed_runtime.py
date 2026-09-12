@@ -26,6 +26,7 @@ from finserve.registry.runtime_build import (
     run_command,
     verify_image_inspection,
 )
+from finserve.registry.runtime_fence import attempt_fence
 from finserve.registry.runtime_probe import completion_probe
 
 
@@ -318,6 +319,25 @@ class DockerRuntime:
         client: httpx.AsyncClient,
     ) -> RuntimeReceipt:
         """Reverify inputs, reconcile creation, and observe actual inference before readiness."""
+        runtime_name(attempt_id)
+        directory = await owned_disk(
+            lambda: owned_directory(
+                owned_directory(workspace, create=True) / attempt_id, create=True
+            )
+        )
+        async with attempt_fence(directory):
+            if await owned_disk(lambda: (directory / "abort-intent.json").exists()):
+                raise RuntimeError("runtime attempt has durable abort intent")
+            return await self._launch(specification, attempt_id, workspace, client)
+
+    async def _launch(
+        self,
+        specification: RuntimeLaunchSpec,
+        attempt_id: str,
+        workspace: Path,
+        client: httpx.AsyncClient,
+    ) -> RuntimeReceipt:
+        """Keep every side effect inside the shared launch/publication operation fence."""
         spec = RuntimeLaunchSpec.model_validate_json(specification.model_dump_json())
         name = runtime_name(attempt_id)
         start = self.monotonic()
@@ -366,14 +386,36 @@ class DockerRuntime:
             raise TimeoutError("model verification exceeded cold-start budget")
         container_id = await self._find(name, directory, deadline)
         if container_id is None:
+            if await owned_disk(
+                lambda: any(
+                    (directory / name).exists()
+                    for name in ("allocation.json", "create-request.json")
+                )
+            ):
+                raise RuntimeError("allocated or requested runtime absent; reconciliation required")
+            await owned_disk(lambda: freeze_file(directory / "create-request.json", spec.digest()))
             await self._command(
                 create_arguments(spec, attempt_id, directory), directory, 60, deadline=deadline
             )
+            await owned_disk(lambda: freeze_file(directory / "create-complete.json", spec.digest()))
             container_id = await self._find(name, directory, deadline)
             if container_id is None:
                 raise RuntimeError("created runtime not observed; reconciliation required")
         actual = await self._inspect(container_id, spec, attempt_id, directory, deadline)
+        await owned_disk(
+            lambda: freeze_file(
+                directory / "allocation.json", json.dumps({"container_id": container_id})
+            )
+        )
         if actual["State"]["Status"] == "created":
+            if await owned_disk(
+                lambda: any(
+                    (directory / name).exists()
+                    for name in ("first-start.json", "start-request.json")
+                )
+            ):
+                raise RuntimeError("recorded or requested start returned to created state")
+            await owned_disk(lambda: freeze_file(directory / "start-request.json", container_id))
             await self._command(
                 ["docker", "container", "start", container_id], directory, 60, deadline=deadline
             )
@@ -383,6 +425,14 @@ class DockerRuntime:
             )
         while self.monotonic() - start < spec.readiness_timeout_seconds:
             actual = await self._inspect(container_id, spec, attempt_id, directory, deadline)
+            await owned_disk(
+                lambda actual=actual: freeze_file(
+                    directory / "first-start.json",
+                    json.dumps(
+                        {"container_id": container_id, "started_at": actual["State"]["StartedAt"]}
+                    ),
+                )
+            )
             if actual["State"]["Running"] is not True:
                 raise RuntimeError("owned runtime exited during readiness")
             if await self.probe_endpoint(spec, client, directory, deadline=deadline):

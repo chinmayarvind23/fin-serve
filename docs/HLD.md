@@ -44,6 +44,17 @@ Producer stages precede that decision. A model stage downloads a frozen file man
 
 Managed local launch and stop stages connect the model/image receipts to an exact Docker process and a real inference readiness check. The actual cold-start proof reached readiness in 152.970 seconds and reconciled the same container start before verified removal. This timing includes local engine startup and is separate from the warm rollback measurement. The performance stage now binds recomputed benchmark evidence to observations of that same runtime start. Its integration tests use synthetic transports and Docker responses; the producer DAG is connected and scheduler-tested with fixtures, and sequential producer releases reuse a stable baseline with fresh evidence. A full live GPU DAG run remains pending.
 
+Failed startup has a separate abort path. New immutable launch inputs name the
+`posix-flock-abort-v1` operation protocol, so an older executor cannot join them using its
+previous input shape. Launch and abort share a per-attempt POSIX process lock through Docker
+operations and journal publication. Durable abort intent survives process death; uncertain
+daemon work remains unresolved. Automatic producer cleanup first retires an unserved revision,
+then reconciles its exact incomplete attempt, releasing its endpoint only after verified
+absence. Borrowed baselines and traffic-owned revisions remain protected. Older launch inputs
+cannot be automatically aborted, even when no container is visible. Windows fails closed for
+managed launch/abort; this protocol requires a shared trusted workspace with working POSIX
+file locks. Existing completed launch receipts retain their normal replay and stop semantics.
+
 The warm deployment adapter changes route truth with an expected revision and generation. Existing requests retain their pinned backend; new requests read the new route. Rollback is healthy only after a real inference probe observes the expected revision and the active generation remains unchanged. This operation switches running endpoints; it does not imply a bounded cold image pull, model load or node recovery.
 
 ## Infrastructure and current limits

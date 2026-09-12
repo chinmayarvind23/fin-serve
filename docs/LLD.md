@@ -45,7 +45,29 @@ The retirement transaction locks routes before controller state and fences subse
 writes. The endpoint remains reserved until exact process stop is verified; only then can a
 new revision reuse it. Retired identities and their original receipts remain immutable.
 Previously served revisions remain protected because the gateway has no durable proof that
-all pinned streams have drained. Incomplete launch attempts require reconciliation.
+all pinned streams have drained. Incomplete launches with the immutable
+`operation_protocol=posix-flock-abort-v1` input use explicit abort reconciliation. Legacy or
+unknown protocols remain unresolved; adding a marker later cannot prove an old executor drained.
+
+`runtime_fence.attempt_fence` holds a never-unlinked kernel `flock` file in the canonical
+attempt directory. Reentrance is limited to the same asyncio task; copied child-task context
+cannot bypass the lock. `launch_runtime_stage` holds this fence through create/start,
+readiness and completion publication. Owned command workers drain through cancellation before
+the descriptor closes. Process death releases the kernel lock, but does not cancel an
+accepted Docker daemon request.
+
+The adapter therefore freezes `create-request.json` before creation, `create-complete.json`
+after successful command return, `allocation.json` after exact inspection, and
+`start-request.json` before starting. `first-start.json` binds ID and `StartedAt` before any
+health probe. Abort persists `abort-intent.json` before querying Docker. An unacknowledged
+create with no observed allocation cannot become an absence claim; an unbound requested start
+requires operator reconciliation. Known allocations must match image, specification, mounts,
+resources, ID and start. Abort observes stopped state and unchanged start, removes by full ID,
+and verifies both ID and attempt-name absence before publishing `RuntimeAbortReceipt` and
+`RuntimeAborted` failure. Log capture errors are recorded without skipping safe cleanup;
+inspection or evidence-publication failures leave the attempt unresolved. Completed abort
+replay only checks absence and refuses reappearance. Automatic launch replay of a
+`RuntimeAborted` stage requires a new producer identity.
 
 SSE frames are transport envelopes, not tokens. The adapter accumulates visible output while a state machine validates one supported finish reason, authoritative usage and the terminal completion marker. A missing or malformed terminal sequence fails. The Ray bridge uses newline-delimited JSON and withholds terminal success until complete EOF; another replica cannot take over an already visible response.
 

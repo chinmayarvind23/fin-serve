@@ -3,7 +3,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from pydantic import Field
@@ -16,7 +16,9 @@ from finserve.registry.metadata import RegistryConflict
 from finserve.registry.model_assets import owned_disk
 from finserve.registry.producer_stages import ProducerStages, StageState
 from finserve.registry.producer_tasks import declare_input, start_owned, verified_model_receipt
+from finserve.registry.runtime_abort import abort_runtime_stage as abort_runtime_stage
 from finserve.registry.runtime_build import RuntimeImage
+from finserve.registry.runtime_fence import RUNTIME_OPERATION_PROTOCOL, attempt_fence
 
 
 class RuntimeStopReceipt(ImmutableModel):
@@ -87,6 +89,24 @@ def load_launch(
     return receipt
 
 
+def declare_launch_input(
+    journal: ProducerStages, stage_id: str, value: dict[str, Any]
+) -> StageState:
+    """Version new immutable inputs so old executors cannot join abort-capable attempts."""
+    history = journal.history(stage_id)
+    if not history:
+        value["operation_protocol"] = RUNTIME_OPERATION_PROTOCOL
+    else:
+        frozen = json.loads(journal.artifacts.get(history[0].input))
+        if "operation_protocol" in frozen:
+            if frozen["operation_protocol"] != RUNTIME_OPERATION_PROTOCOL:
+                raise RegistryConflict("unsupported runtime operation protocol")
+            value["operation_protocol"] = RUNTIME_OPERATION_PROTOCOL
+        # Preserve legacy canonical bytes for normal launch/completed replay. No new
+        # adapter observation can retroactively fence an old executor of that input.
+    return declare_input(journal, stage_id, value)
+
+
 async def launch_runtime_stage(
     journal: ProducerStages,
     stage_id: str,
@@ -104,7 +124,7 @@ async def launch_runtime_stage(
         lambda: verify_upstream(journal, model_stage_id, build_stage_id, spec)
     )
     state = await owned_disk(
-        lambda: declare_input(
+        lambda: declare_launch_input(
             journal,
             stage_id,
             {
@@ -122,29 +142,42 @@ async def launch_runtime_stage(
         receipt = await owned_disk(lambda: load_launch(journal, state, spec))
         await runtime.observe(spec, receipt, client)
         return receipt
+    if state.status == "failed" and state.error_code == "RuntimeAborted":
+        raise RegistryConflict("aborted runtime stage requires a new producer identity")
     running = state if state.status == "running" else await start_owned(journal, stage_id)
     assert running.attempt_id is not None
-    # Cancellation and daemon errors preserve the same attempt. A drained Docker CLI alone
-    # does not establish whether its named external action happened.
-    receipt = await runtime.launch(spec, running.attempt_id, workspace, client)
+    directory = await owned_disk(
+        lambda: owned_directory(workspace / str(running.attempt_id), create=True)
+    )
+    async with attempt_fence(directory):
+        current = await owned_disk(lambda: journal.state(stage_id))
+        if current.attempt_id != running.attempt_id or current.status != "running":
+            if current.status == "completed" and current.attempt_id == running.attempt_id:
+                receipt = await owned_disk(lambda: load_launch(journal, current, spec))
+                await runtime.observe(spec, receipt, client)
+                return receipt
+            raise RegistryConflict("runtime attempt changed before launch fence")
+        # Cancellation and daemon errors preserve the same attempt. A drained Docker CLI alone
+        # does not establish whether its named external action happened.
+        receipt = await runtime.launch(spec, running.attempt_id, workspace, client)
 
-    def publish() -> RuntimeReceipt:
-        """Concurrent reconciliations may observe different times but must agree on the start."""
-        reference = journal.artifacts.put(receipt.model_dump_json().encode())
-        assert running.attempt_id is not None
-        try:
-            journal.finish(stage_id, running.attempt_id, reference)
-        except RegistryConflict:
-            actual = load_launch(journal, journal.state(stage_id), spec)
-            if (actual.container_id, actual.container_started_at) != (
-                receipt.container_id,
-                receipt.container_started_at,
-            ) or actual.attempt_id != running.attempt_id:
-                raise RegistryConflict("runtime completion identity changed") from None
-            return actual
-        return load_launch(journal, journal.state(stage_id), spec)
+        def publish() -> RuntimeReceipt:
+            """Concurrent reconciliations must agree on the exact observed start."""
+            reference = journal.artifacts.put(receipt.model_dump_json().encode())
+            assert running.attempt_id is not None
+            try:
+                journal.finish(stage_id, running.attempt_id, reference)
+            except RegistryConflict:
+                actual = load_launch(journal, journal.state(stage_id), spec)
+                if (actual.container_id, actual.container_started_at) != (
+                    receipt.container_id,
+                    receipt.container_started_at,
+                ) or actual.attempt_id != running.attempt_id:
+                    raise RegistryConflict("runtime completion identity changed") from None
+                return actual
+            return load_launch(journal, journal.state(stage_id), spec)
 
-    return await owned_disk(publish)
+        return await owned_disk(publish)
 
 
 async def stop_runtime_stage(

@@ -29,13 +29,19 @@ from finserve.registry.produced_release import (
 )
 from finserve.registry.producer_stages import ProducerStages
 from finserve.registry.producer_tasks import (
+    ModelSnapshotReceipt,
     build_stage,
     declare_input,
     fetch_stage,
     verified_model_receipt,
 )
 from finserve.registry.runtime_build import RuntimeBuildSpec, RuntimeImage
-from finserve.registry.runtime_stages import launch_runtime_stage, load_launch, stop_runtime_stage
+from finserve.registry.runtime_stages import (
+    abort_runtime_stage,
+    launch_runtime_stage,
+    load_launch,
+    stop_runtime_stage,
+)
 from finserve.reliability.promotion import PromotionPolicy
 from finserve.reliability.rollback import DeploymentStore
 from finserve.reliability.warm_routes import BackendConfiguration, WarmBackend, WarmRouteStore
@@ -365,7 +371,7 @@ async def cleanup_unserved(
     control: DeploymentStore,
     runtime: DockerRuntime,
 ) -> dict[str, str]:
-    """Retire unused revisions before exact receipt-bound cleanup; preserve ambiguous launches."""
+    """Retire unused revisions before stop or failed-start abort; retain ambiguous endpoints."""
     spec = await owned_disk(lambda: producer_input(journal, job_id))
     launch_ids = [job_id + ":" + name + "-launch" for name in ("baseline", "candidate")]
     histories = [await owned_disk(lambda key=key: journal.history(key)) for key in launch_ids]
@@ -380,8 +386,8 @@ async def cleanup_unserved(
             outcomes[name] = "not_launched"
             continue
         state = await owned_disk(partial(journal.state, launch_id))
-        if state.status != "completed":
-            outcomes[name] = "needs_reconciliation"
+        if state.status == "planned":
+            outcomes[name] = "not_launched"
             continue
         launch_spec = await owned_disk(partial(cleanup_launch, journal, spec, name, launch_id))
         backend = WarmBackend(
@@ -395,11 +401,24 @@ async def cleanup_unserved(
         if not retired:
             outcomes[name] = "preserved_for_traffic"
             continue
-        await stop_runtime_stage(
-            journal, job_id + ":" + name + "-cleanup", launch_id, launch_spec, runtime
-        )
+        if state.status == "completed":
+            await stop_runtime_stage(
+                journal, job_id + ":" + name + "-cleanup", launch_id, launch_spec, runtime
+            )
+            outcomes[name] = "stopped"
+        else:
+            assert state.attempt_id is not None
+            try:
+                await abort_runtime_stage(
+                    journal, job_id + ":" + name + "-abort", launch_id, state.attempt_id, runtime
+                )
+            except Exception:
+                # Keep the endpoint reserved and durable abort evidence intact. A
+                # concurrent successful launch is handled by receipt-bound stop on replay.
+                outcomes[name] = "needs_reconciliation"
+                continue
+            outcomes[name] = "aborted"
         await owned_disk(partial(routes.release_retired_endpoint, backend))
-        outcomes[name] = "stopped"
     return outcomes
 
 
@@ -432,14 +451,31 @@ def cleanup_launch(
     state = journal.state(launch_id)
     frozen = json.loads(journal.artifacts.get(state.input))
     launch = RuntimeLaunchSpec.model_validate(frozen["specification"])
-    load_launch(journal, state, launch)
+    if state.status == "completed":
+        load_launch(journal, state, launch)
     build = journal.state(spec.job_id + ":build")
     if build.status != "completed" or build.output is None:
         raise ValueError("cleanup requires the completed immutable build receipt")
     image = RuntimeImage.model_validate_json(journal.artifacts.get(build.output))
+    model_state = journal.state(spec.job_id + ":model")
+    if model_state.status != "completed" or model_state.output is None:
+        raise ValueError("cleanup requires the completed immutable model receipt")
+    model = ModelSnapshotReceipt.model_validate_json(journal.artifacts.get(model_state.output))
+    build_input = json.loads(journal.artifacts.get(build.input))
     engine = spec.baseline if name == "baseline" else spec.candidate
     if (
-        launch.image != image
+        frozen.get("kind") != "managed-runtime-launch-v1"
+        or frozen.get("workspace") != str(spec.workspace / name / "runtime")
+        or frozen.get("model") != model_state.output.model_dump()
+        or frozen.get("image") != build.output.model_dump()
+        or model.specification_sha256 != spec.model.digest()
+        or model.directory != launch.model_directory
+        or image.specification.model_manifest_sha256 != model.manifest.sha256
+        or build_input.get("kind") != "runtime-image-v1"
+        or build_input.get("model_stage_id") != spec.job_id + ":model"
+        or build_input.get("model_manifest") != model.manifest.model_dump()
+        or build_input.get("specification") != image.specification.model_dump(mode="json")
+        or launch.image != image
         or image.specification.source_revision != spec.source_revision
         or launch.model != spec.model
         or launch.model_directory != spec.workspace / "models" / spec.model.digest()

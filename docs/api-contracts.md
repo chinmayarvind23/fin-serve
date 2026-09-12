@@ -42,3 +42,21 @@ JSON requires 1–16 unique ASCII identifier keys of at most 64 characters. Fiel
 The adapter retains at most 128 KiB of constrained output for a final syntax check. Invalid or incomplete output fails before terminal success; any already-streamed fragments remain visible and must be treated as failed output. No repair, trimming or expected-answer comparison occurs. A syntactically valid response can still be factually wrong, and a valid output ending with `finish_reason=length` still reports that limit.
 
 Managed vLLM profiles can pin `structured_output_backend="xgrammar"`, which also explicitly permits JSON whitespace. The API accepts no arbitrary regex, recursive schema, constant, default or caller-provided answer list. Native integration follows the [vLLM 0.29 structured-output API](https://docs.vllm.ai/en/v0.29.0/features/structured_outputs/) and [backend configuration](https://docs.vllm.ai/en/v0.29.0/api/vllm/config/structured_outputs/). Transport, collector and CPU grammar checks pass; a new constrained GPU quality experiment remains pending. [Reproducibility](reproducibility.md) describes the separate frozen prompt-to-constraint map used by collectors.
+
+
+## Managed failed-start reconciliation
+
+The trusted Python operator API is
+`runtime_stages.abort_runtime_stage(journal, abort_stage_id, launch_stage_id, expected_attempt_id, runtime)`.
+It derives workspace and specification from immutable launch input; callers cannot supply a
+container selector. Only an exact incomplete attempt using `posix-flock-abort-v1` is eligible.
+Completed launches use the existing receipt-bound stop API. Legacy protocols, wrong attempts,
+changed ownership and ambiguous daemon results reject automatic reconciliation.
+
+The returned `RuntimeAbortReceipt` contains the launch-input reference, stage/attempt,
+specification digest, observed container/start when available, retained observation references,
+terminal `absent` or `stopped-and-removed` outcome, observation time and any auxiliary log error.
+It is not a readiness receipt. Partial failures retain intent and evidence without declaring
+launch failure. Producer `cleanup_unserved` reports `aborted` only after terminal verification;
+`needs_reconciliation` keeps the retired endpoint reserved. POSIX process locking and a shared
+trusted runtime workspace are required; Windows launch/abort fails closed.
