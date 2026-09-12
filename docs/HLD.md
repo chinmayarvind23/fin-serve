@@ -96,3 +96,14 @@ The AWS foundation now separates node desired-size ownership from Terraform conf
 ## Node controller deployment stage
 
 The separate node-autoscaler Helm chart binds Cluster Autoscaler 1.35.2 to the foundation's dedicated IRSA role and discovery tags. It observes scheduling demand and changes node desired counts within existing bounds. The chart preserves fixed model and Serve replica ownership; it does not equate traffic idleness with a drained engine. Image bytes are pinned, inputs cannot override flags or permissions, and twelve render checks plus an actual offline binary flag check pass. Kubernetes admission, AWS identity, GPU volume mounts and live scale/drain cycles remain unverified.
+
+## Local model capacity
+
+Local model capacity has a bounded, integrated 1 to 2 to 1 path. A frozen plan enrolls only
+an exact, canonically approved and promoted stable primary. Authenticated gateway
+load drives a second equivalent physical runtime through the existing managed launch,
+readiness and cleanup executors. A global deployment slot includes warming and uncertain
+allocations. Durable pool membership selects the actual endpoint; removal stops new
+admissions before existing stream obligations drain. Health continues to probe the primary
+through the ordinary gateway. CPU integration exercises real local HTTP and a fake Docker
+command boundary; a successful GPU capacity experiment has not yet been established.

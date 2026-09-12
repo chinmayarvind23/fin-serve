@@ -265,3 +265,58 @@ The single controller requests 100m CPU/600Mi on CPU nodes, caps total nodes at 
 The warm gateway caches at most 32 backend clients. At capacity it closes an idle
 retired pool before allocating another; local stream ownership remains pinned when
 HTTP closure is uncertain. Pool eviction supplies no remote runtime drain proof.
+
+
+## Local model capacity
+
+`CapacityPlan` freezes the approved primary launch/model/build references, canonical
+approval job, exact route generation, one extra endpoint, up to eight distinct replica
+specifications, per-member gateway request limit, sample budget and hysteresis policy.
+Enrollment calls `approved_activation`, re-evaluates the canonical gate, verifies the
+candidate profile and completed primary launch, and requires active=known-good at the
+same route/control generation. Manual bootstrap is insufficient. Replica equivalence
+permits only revision ID, endpoint and the resulting full profile digest to differ;
+model/tokenizer/image/source/engine parameters and resource limits remain identical.
+This explicit replication authorization does not evaluate a changed model or relax quality.
+
+A fresh `WarmRouteStore(..., capacity_enabled=True)` installs immutable protocol metadata,
+snapshot fields and write guards. Existing stores cannot opt in. A unique deployment
+allocation authority prevents different plans from each creating an extra runtime. Its
+slot is reserved before any daemon operation and retained through warming, draining or
+uncertain cleanup. The per-plan POSIX fence drains owned operations before cancellation
+unlocks it. Store transactions are released before daemon, HTTP or readiness waits.
+
+Capacity middleware does not reserve a pre-authentication stream. After normal auth,
+validation, quota and application admission, the engine atomically selects a ready physical
+member and writes its durable reservation. Positive return of an upstream HTTP response
+marks dispatched serving occupancy; pre-dispatch and collector uncertainty cannot prove
+low load. Collector and primary-probe rows are separate populations. Per-member serving
+limits count outstanding reservations conservatively; they are a gateway budget, not a
+measurement of all native work from arbitrary direct clients.
+
+The controller invokes `launch_runtime_stage`, then rechecks the unchanged stable anchor
+before publishing ready membership. On lower sustained load it removes eligibility before
+calling `retire_drained` and exact `stop_runtime_stage`. An incomplete startup uses explicit
+`abort_runtime_stage`; unresolved daemon mutations retain the global slot. Crashes never
+expire stream rows. Ordinary promotion immediately invalidates old pool selection, and
+stale warming work is reclaimed without being published. The primary is borrowed and is
+never stopped by capacity cleanup. Each generation uses a new frozen revision ID; endpoint
+reuse waits for terminal lifecycle cleanup. Generic retirement refuses an eligible pool
+member and treats its pool history as served history.
+
+Pool generation is a durable counter with retained history, advanced atomically on route
+cutover, enrollment, ready publication and removal. Responses distinguish physical revision,
+logical anchor and pool generation. Capacity middleware delays response-start forwarding
+until dispatch identity is known. A pre-dispatch error has anchor metadata only. Physical
+container/start identity is bound by the membership's immutable RuntimeReceipt.
+
+`WarmRouteAdapter.health` mints a bounded, one-use token tied to the exact route snapshot
+and canonical inference request. Normal authenticated gateway dispatch consumes it and
+selects the primary. Replay/substitution fails; probe work retains a drain obligation but
+is excluded from scaling demand. Token revocation removes unused authority only.
+
+The CLI runs a frozen plan with the real DockerRuntime and attempts explicit extra-member
+drain at exit. Its JSON result and route-store event/receipt history retain blocked cleanup.
+Synthetic integration covers actual HTTP load, dispatch attribution, held-stream downscale,
+concurrent controllers, competing plans, stale anchors and lost create responses. This is
+implementation evidence; no hardware throughput, utilization or cost gain follows from it.

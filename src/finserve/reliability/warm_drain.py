@@ -1,5 +1,6 @@
 """Durable local admission evidence; crashes never expire into a stream-drain claim."""
 
+import json
 import sqlite3
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from finserve.contracts.deployment import ImmutableModel
 from finserve.http_ownership import OwnedCloseStream
 
 if TYPE_CHECKING:
-    from finserve.reliability.warm_routes import RouteSnapshot, WarmBackend
+    from finserve.reliability.warm_routes import RouteSnapshot, WarmBackend, WarmRouteStore
 
 ADMISSION_PROTOCOL = "durable-http-close-v1"
 
@@ -88,11 +89,32 @@ class AdmissionLease:
     backend: "WarmBackend"
     backend_started: int = 0
     backend_closed: int = 0
+    kind: Literal["serving", "collector", "probe"] | None = None
+    phase: Literal["reserved", "dispatched"] = "reserved"
+    store: "WarmRouteStore | None" = None
+    anchor: "RouteSnapshot | None" = None
+    pool_generation: int | None = None
 
     @property
     def verified_closed(self) -> bool:
         """A failed send without a response cannot masquerade as verified connection closure."""
         return self.backend_started == self.backend_closed
+
+
+def admission_payload(lease: AdmissionLease) -> str:
+    """Keep non-capacity evidence byte-compatible while tagging dispatch and collector work."""
+    value: dict[str, object] = {
+        "route": lease.snapshot.model_dump(mode="json"),
+        "backend": lease.backend.model_dump(mode="json"),
+    }
+    if lease.kind is not None:
+        value.update(
+            kind=lease.kind,
+            phase=lease.phase,
+            anchor=lease.anchor.model_dump(mode="json") if lease.anchor else None,
+            pool_generation=lease.pool_generation,
+        )
+    return json.dumps(value, sort_keys=True)
 
 
 # Bind borrowed work to the exact frozen task input and owner asyncio task. Child tasks
@@ -146,6 +168,17 @@ class AdmissionTransport(httpx.AsyncBaseTransport):
             if not isinstance(response.stream, httpx.AsyncByteStream):
                 raise TypeError("asynchronous backend stream required")
             response.stream = AdmissionCloseStream(response.stream, lease)
+            if lease.store is not None and lease.kind is not None:
+                from finserve.registry.model_assets import owned_disk
+
+                store = lease.store
+                try:
+                    # A returned HTTP response positively establishes transport dispatch.
+                    await owned_disk(lambda: store.mark_dispatched(lease))
+                except BaseException:
+                    # The caller has not received this response yet, so we own its closure.
+                    await response.aclose()
+                    raise
         return response
 
     async def aclose(self) -> None:

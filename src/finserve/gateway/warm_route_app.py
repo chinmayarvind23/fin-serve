@@ -6,6 +6,7 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from fastapi import FastAPI
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -21,6 +22,20 @@ from finserve.reliability.warm_routes import RouteSnapshot, WarmRouteStore
 request_route: ContextVar[RouteSnapshot | None] = ContextVar("finserve_warm_route", default=None)
 request_admission: ContextVar[AdmissionLease | None] = ContextVar(
     "finserve_warm_admission", default=None
+)
+
+
+@dataclass
+class CapacityRequest:
+    """A shared holder crosses ASGI child tasks without publishing a pre-authentication pin."""
+
+    anchor: RouteSnapshot
+    probe_token: str | None
+    lease: AdmissionLease | None = None
+
+
+request_capacity: ContextVar[CapacityRequest | None] = ContextVar(
+    "finserve_capacity_request", default=None
 )
 
 
@@ -86,7 +101,25 @@ class WarmRouteEngine:
         snapshot = request_route.get()
         if snapshot is None or snapshot.deployment_id != self.deployment_id:
             raise RuntimeError("inference must be pinned by route middleware")
-        admission = request_admission.get()
+        capacity = request_capacity.get()
+        admission_token = None
+        if capacity is not None:
+            from finserve.reliability.capacity_store import select_admission
+
+            if capacity.lease is not None:
+                raise RuntimeError("capacity request cannot dispatch twice")
+
+            def reserve() -> AdmissionLease:
+                """Expose committed ownership even if cancellation interrupts the disk await."""
+                lease = select_admission(self.store, capacity.anchor, request, capacity.probe_token)
+                capacity.lease = lease
+                return lease
+
+            admission = await owned_disk(reserve)
+            snapshot = admission.snapshot
+            admission_token = request_admission.set(admission)
+        else:
+            admission = request_admission.get()
         if snapshot.admission_protocol == ADMISSION_PROTOCOL and (
             admission is None or admission.snapshot != snapshot
         ):
@@ -106,6 +139,8 @@ class WarmRouteEngine:
                     self.client_users[revision_id] = remaining
                 else:
                     self.client_users.pop(revision_id, None)
+            if admission_token is not None:
+                request_admission.reset(admission_token)
 
     async def close(self) -> None:
         """Close every registered proxy pool after application request draining finishes."""
@@ -128,6 +163,7 @@ class WarmRouteMiddleware:
             await self.app(scope, receive, send)
             return
         admission = None
+        capacity = None
         try:
             scope.setdefault("state", {}).setdefault("finserve_received", time.perf_counter())
             async with asyncio.timeout(5):
@@ -140,8 +176,19 @@ class WarmRouteMiddleware:
                         or engine.deployment_id != self.deployment_id
                     ):
                         raise RuntimeError("durable admission requires the bound warm engine")
-                    admission = await owned_disk(lambda: self.store.admit(self.deployment_id))
-                    snapshot = admission.snapshot
+                    if self.store.capacity_protocol is not None:
+                        snapshot = await owned_disk(lambda: self.store.snapshot(self.deployment_id))
+                        tokens = [
+                            value.decode("ascii")
+                            for name, value in scope.get("headers", [])
+                            if name.lower() == b"x-finserve-primary-probe"
+                        ]
+                        if len(tokens) > 1 or any(len(value) != 64 for value in tokens):
+                            raise ValueError("invalid primary probe header")
+                        capacity = CapacityRequest(snapshot, tokens[0] if tokens else None)
+                    else:
+                        admission = await owned_disk(lambda: self.store.admit(self.deployment_id))
+                        snapshot = admission.snapshot
                 else:
                     snapshot = await asyncio.to_thread(self.store.snapshot, self.deployment_id)
         except Exception:
@@ -149,19 +196,50 @@ class WarmRouteMiddleware:
             return
         token = request_route.set(snapshot)
         admission_token = request_admission.set(admission)
+        capacity_token = request_capacity.set(capacity)
+        pending_start: Message | None = None
 
-        async def identity_send(message: Message) -> None:
-            """Headers describe the route actually pinned before this response began streaming."""
-            if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
+        async def stamp_start(message: Message) -> None:
+            """Capacity responses name physical dispatch separately from the logical anchor."""
+            headers = list(message.get("headers", []))
+            actual = snapshot
+            if capacity is not None:
                 headers.extend(
                     [
-                        (b"x-finserve-revision", snapshot.revision_id.encode()),
-                        (b"x-finserve-revision-digest", snapshot.revision_digest.encode()),
-                        (b"x-finserve-route-generation", str(snapshot.generation).encode()),
+                        (b"x-finserve-anchor-revision", snapshot.revision_id.encode()),
+                        (b"x-finserve-anchor-digest", snapshot.revision_digest.encode()),
+                        (b"x-finserve-anchor-generation", str(snapshot.generation).encode()),
                     ]
                 )
-                message = {**message, "headers": headers}
+                selected = capacity.lease
+                if selected is None or selected.phase != "dispatched":
+                    await send({**message, "headers": headers})
+                    return
+                actual = selected.snapshot
+                headers.append(
+                    (b"x-finserve-pool-generation", str(selected.pool_generation or 0).encode())
+                )
+            headers.extend(
+                [
+                    (b"x-finserve-revision", actual.revision_id.encode()),
+                    (b"x-finserve-revision-digest", actual.revision_digest.encode()),
+                    (b"x-finserve-route-generation", str(actual.generation).encode()),
+                ]
+            )
+            await send({**message, "headers": headers})
+
+        async def identity_send(message: Message) -> None:
+            """Delay only capacity headers until dispatch fixes identity, even for SSE errors."""
+            nonlocal pending_start
+            if message["type"] == "http.response.start":
+                if capacity is not None:
+                    pending_start = message
+                else:
+                    await stamp_start(message)
+                return
+            if pending_start is not None:
+                await stamp_start(pending_start)
+                pending_start = None
             await send(message)
 
         try:
@@ -169,8 +247,10 @@ class WarmRouteMiddleware:
         finally:
             request_route.reset(token)
             request_admission.reset(admission_token)
-            if admission is not None and admission.verified_closed:
-                await owned_disk(lambda: self.store.finish_admission(admission))
+            request_capacity.reset(capacity_token)
+            owned = capacity.lease if capacity is not None else admission
+            if owned is not None and owned.verified_closed:
+                await owned_disk(lambda: self.store.finish_admission(owned))
 
 
 def create_warm_app(

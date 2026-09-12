@@ -20,6 +20,7 @@ from finserve.contracts.deployment import (
     ImmutableModel,
     Revision,
 )
+from finserve.contracts.inference import InferenceRequest
 from finserve.contracts.serving_profile import ServingProfileV1
 from finserve.engines.openai_adapter import CompletionState, sse_events
 from finserve.http_ownership import HTTPClosureError, own_response
@@ -36,6 +37,7 @@ from finserve.reliability.warm_drain import (
     ADMISSION_PROTOCOL,
     AdmissionLease,
     WarmDrainReceipt,
+    admission_payload,
     initialize_admissions,
     read_admission_protocol,
 )
@@ -102,6 +104,7 @@ class RouteSnapshot(ImmutableModel):
     generation: int = Field(ge=0, strict=True)
     changed_at: float = Field(gt=0)
     admission_protocol: Literal["durable-http-close-v1"] | None = None
+    capacity_protocol: Literal["local-capacity-v1"] | None = None
 
     @model_serializer(mode="wrap")
     def preserve_legacy(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -109,6 +112,8 @@ class RouteSnapshot(ImmutableModel):
         result: dict[str, Any] = handler(self)
         if self.admission_protocol is None:
             result.pop("admission_protocol", None)
+        if self.capacity_protocol is None:
+            result.pop("capacity_protocol", None)
         return result
 
 
@@ -116,9 +121,17 @@ class WarmRouteStore:
     """External traffic truth is separate from orchestration intent but owns the final CAS fence."""
 
     admission_protocol: Literal["durable-http-close-v1"] | None
+    capacity_protocol: Literal["local-capacity-v1"] | None
 
-    def __init__(self, path: Path, *, expected_identity: str | None = None) -> None:
+    def __init__(
+        self, path: Path, *, expected_identity: str | None = None, capacity_enabled: bool = False
+    ) -> None:
         """Keep SQLite WAL/FULL state outside source, with short transactions around cutovers."""
+        from finserve.reliability.capacity_store import (
+            initialize_capacity,
+            read_capacity_protocol,
+        )
+
         self.path = path.resolve()
         repository = Path(__file__).resolve().parents[3]
         if self.path == repository or repository in self.path.parents:
@@ -128,6 +141,9 @@ class WarmRouteStore:
             self.identity = expected_identity
             with self.transaction() as connection:
                 self.admission_protocol = read_admission_protocol(connection)
+                self.capacity_protocol = read_capacity_protocol(connection)
+                if capacity_enabled and self.capacity_protocol is None:
+                    raise ControlConflict("legacy store cannot enable capacity")
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path, isolation_level=None)) as connection:
@@ -146,6 +162,8 @@ class WarmRouteStore:
             self.identity = initialize_identity(connection)
             initialize_admissions(connection, new_store=new_store)
             self.admission_protocol = read_admission_protocol(connection)
+            initialize_capacity(connection, new_store=new_store, enabled=capacity_enabled)
+            self.capacity_protocol = read_capacity_protocol(connection)
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection]:
@@ -223,6 +241,8 @@ class WarmRouteStore:
 
     def admit(self, deployment_id: str) -> AdmissionLease:
         """Select route and persist its stream obligation in one retirement-fenced transaction."""
+        if self.capacity_protocol is not None:
+            raise ControlConflict("capacity requires authenticated dispatch admission")
         with self.transaction() as connection:
             route = self._snapshot(connection, deployment_id)
             if (
@@ -242,39 +262,55 @@ class WarmRouteStore:
             return self._insert_admission(connection, route, backend)
 
     def _insert_admission(
-        self, connection: sqlite3.Connection, route: RouteSnapshot, backend: WarmBackend
+        self,
+        connection: sqlite3.Connection,
+        route: RouteSnapshot,
+        backend: WarmBackend,
+        *,
+        kind: Literal["serving", "collector", "probe"] = "serving",
+        anchor: RouteSnapshot | None = None,
+        pool_generation: int | None = None,
     ) -> AdmissionLease:
         """Gateway and collector obligations share the same atomic retirement fence and cap."""
         if connection.execute("SELECT COUNT(*) FROM warm_admissions").fetchone()[0] >= 4096:
             raise ControlConflict("durable admission limit reached")
-        lease = AdmissionLease(uuid4().hex, route, backend)
+        lease = AdmissionLease(
+            uuid4().hex,
+            route,
+            backend,
+            kind=kind if self.capacity_protocol else None,
+            store=self if self.capacity_protocol else None,
+            anchor=anchor,
+            pool_generation=pool_generation,
+        )
         connection.execute(
             "INSERT INTO warm_admissions VALUES(?,?,?)",
-            (
-                lease.admission_id,
-                route.revision_id,
-                json.dumps(
-                    {
-                        "route": route.model_dump(mode="json"),
-                        "backend": backend.model_dump(mode="json"),
-                    },
-                    sort_keys=True,
-                ),
-            ),
+            (lease.admission_id, route.revision_id, admission_payload(lease)),
         )
         return lease
+
+    def mark_dispatched(self, lease: AdmissionLease) -> None:
+        """Only a positively returned backend response counts as serving load."""
+        expected = admission_payload(lease)
+        with self.transaction() as connection:
+            row = connection.execute(
+                "SELECT payload FROM warm_admissions WHERE admission_id=?", (lease.admission_id,)
+            ).fetchone()
+            if row is None or row[0] != expected or lease.phase != "reserved":
+                raise ControlConflict("dispatch obligation changed")
+            value = json.loads(expected)
+            value["phase"] = "dispatched"
+            connection.execute(
+                "UPDATE warm_admissions SET payload=? WHERE admission_id=?",
+                (json.dumps(value, sort_keys=True), lease.admission_id),
+            )
+        lease.phase = "dispatched"
 
     def finish_admission(self, lease: AdmissionLease) -> None:
         """Only an exact locally closed response releases its durable stream obligation."""
         if not lease.verified_closed:
             raise ControlConflict("backend transport closure is unresolved")
-        expected = json.dumps(
-            {
-                "route": lease.snapshot.model_dump(mode="json"),
-                "backend": lease.backend.model_dump(mode="json"),
-            },
-            sort_keys=True,
-        )
+        expected = admission_payload(lease)
         with self.transaction() as connection:
             row = connection.execute(
                 "SELECT payload FROM warm_admissions WHERE admission_id=?", (lease.admission_id,)
@@ -289,8 +325,12 @@ class WarmRouteStore:
         """Permanently fence an inactive revision and prove no durable stream obligations remain."""
         if self.path == control.path:
             raise ValueError("route and control stores require separate database files")
+        from finserve.reliability.capacity_store import retirement_blocked
+
         revision = backend.revision
         with self.transaction() as connection, control.transaction() as controller:
+            if retirement_blocked(connection, revision.revision_id, unserved=False):
+                return False
             if read_admission_protocol(connection) != ADMISSION_PROTOCOL:
                 return False
             for (payload,) in connection.execute("SELECT payload FROM warm_routes"):
@@ -358,8 +398,12 @@ class WarmRouteStore:
         """
         if self.path == control.path:
             raise ValueError("route and control stores require separate database files")
+        from finserve.reliability.capacity_store import retirement_blocked
+
         revision = backend.revision
         with self.transaction() as connection, control.transaction() as controller:
+            if retirement_blocked(connection, revision.revision_id, unserved=True):
+                return False
             for (payload,) in connection.execute("SELECT payload FROM warm_events"):
                 if RouteSnapshot.model_validate_json(payload).revision_id == revision.revision_id:
                     return False
@@ -432,6 +476,10 @@ class WarmRouteStore:
 
     def _save(self, connection: sqlite3.Connection, state: RouteSnapshot) -> None:
         """Append route history in the same commit that changes future request selection."""
+        if self.capacity_protocol is not None:
+            from finserve.reliability.capacity_store import advance_pool
+
+            advance_pool(connection, state.deployment_id, "route:" + state.model_dump_json())
         connection.execute(
             "INSERT INTO warm_routes VALUES(?,?) "
             "ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
@@ -462,6 +510,7 @@ class WarmRouteStore:
                 generation=0,
                 changed_at=time.time(),
                 admission_protocol=self.admission_protocol,
+                capacity_protocol=self.capacity_protocol,
             )
             self._save(connection, state)
             return state
@@ -507,7 +556,7 @@ class WarmRouteStore:
                     or route.admission_protocol != ADMISSION_PROTOCOL
                 ):
                     raise ControlConflict("legacy store cannot reserve a collector")
-                return self._insert_admission(connection, route, backend)
+                return self._insert_admission(connection, route, backend, kind="collector")
             return None
 
     def acknowledge_baseline(
@@ -583,6 +632,7 @@ class WarmRouteStore:
                 generation=current.generation + 1,
                 changed_at=time.time(),
                 admission_protocol=self.admission_protocol,
+                capacity_protocol=self.capacity_protocol,
             )
             self._save(connection, updated)
             connection.execute(
@@ -725,19 +775,26 @@ class WarmRouteAdapter:
         before = await owned_disk(lambda: self.store.snapshot(deployment_id))
         backend = await owned_disk(lambda: self.store.backend(before.revision_id))
         valid = False
+        payload = InferenceRequest(
+            model=backend.configuration.model,
+            prompt="health",
+            max_tokens=1,
+            temperature=0,
+            stream=True,
+            timeout_seconds=self.timeout_seconds,
+        )
+        primary_token = None
+        if self.store.capacity_protocol is not None:
+            from finserve.reliability.capacity_store import probe_token
+
+            primary_token = await owned_disk(lambda: probe_token(self.store, before, payload))
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 async with self.client.stream(
                     "POST",
                     self.traffic_url + "/v1/completions",
-                    json={
-                        "model": backend.configuration.model,
-                        "prompt": "health",
-                        "max_tokens": 1,
-                        "temperature": 0,
-                        "stream": True,
-                        "timeout_seconds": self.timeout_seconds,
-                    },
+                    json=payload.model_dump(mode="json"),
+                    headers={"x-finserve-primary-probe": primary_token} if primary_token else {},
                     follow_redirects=False,
                 ) as response:
                     own_response(response)
@@ -772,6 +829,11 @@ class WarmRouteAdapter:
             raise
         except Exception:
             valid = False
+        finally:
+            if primary_token is not None:
+                from finserve.reliability.capacity_store import revoke_probe
+
+                await owned_disk(lambda: revoke_probe(self.store, primary_token))
         return HealthObservation(
             revision_id=before.revision_id,
             revision_digest=before.revision_digest,

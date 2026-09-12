@@ -81,3 +81,32 @@ Producer cleanup reports `needs_reconciliation` for an incomplete drain and reta
 endpoint reservation. It preserves the existing exact runtime-stop receipt after successful
 drain. New protocol stores reject old readers/writers through snapshot schema and SQLite
 write guards; existing stores cannot be upgraded in place to claim old streams drained.
+
+
+## Local capacity control
+
+Trusted Python entrypoints:
+
+- `WarmRouteStore(path, capacity_enabled=True)` creates a new capacity-protocol store.
+  Opening an existing store reads its immutable mode; legacy stores cannot be enrolled.
+- `freeze_capacity(journal, routes, control, plan)` validates canonical release approval,
+  exact stable primary and immutable launch assets, then reserves deployment authority.
+- `CapacityController(...).tick()` derives actual tagged gateway observations and executes
+  one bounded lifecycle/reconciliation step. `state()` and `observation()` expose durable
+  progress and current demand; no caller-supplied desired-load override is accepted.
+- `CapacityController.close()` stops new extra-member admission and attempts exact owned
+  drain/cleanup. A blocked result retains its runtime slot and stream obligations.
+
+Run `python -m finserve.registry.capacity_cli --plan PLAN.json --routes ROUTES.sqlite
+--control CONTROL.sqlite --output RESULT.json` with the existing trusted registry/artifact
+environment. The route/control stores must already exist; the plan cannot name a new image
+through an HTTP request. Exit 2 preserves a failed or unresolved result. Windows runtime
+execution fails closed because the shared attempt fence requires POSIX flock.
+
+Capacity responses retain `x-finserve-revision`, `x-finserve-revision-digest` and
+`x-finserve-route-generation` for the actual physical dispatch. They add
+`x-finserve-anchor-revision`, `x-finserve-anchor-digest`, `x-finserve-anchor-generation`
+and `x-finserve-pool-generation`. A pre-dispatch error has only anchor metadata. Optional
+benchmark `RequestRecord.routing` retains this distinction without changing legacy rows.
+The private `x-finserve-primary-probe` header accepts only bounded one-use authority minted
+by the route store for an exact request and generation; it does not bypass normal auth.
