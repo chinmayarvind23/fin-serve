@@ -99,7 +99,7 @@ The GIF below comes from an actual Chromium walkthrough of the local evidence ex
 
 ![Actual FinServe explorer: historical serving comparison followed by the failed quality gate](docs/assets/explorer-demo.gif)
 
-The full local CPU suite on `5f217fa` passed **1,101 tests**, with **49 skipped** and **88.65% combined statement/branch coverage**, above the unchanged 85% gate. The skips cover unavailable Helm/schema tools, Airflow and opt-in live Ray/Redis checks; this result is not a hosted CI or GPU acceptance claim. Subsequent strict-type and formatting corrections passed Pyright and Ruff.
+The full local CPU suite on `66b5501` passed **1,134 tests**, with **49 skipped** and **88.20% combined statement/branch coverage**, above the unchanged 85% gate. The skips cover unavailable Helm/schema tools, Airflow and opt-in live Ray/Redis checks; this result is not a hosted CI or GPU acceptance claim. The capacity integration tests ran and passed. Aggregate coverage does not establish every subsystem's stricter coverage target.
 
 ## Next improvements
 
