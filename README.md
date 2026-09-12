@@ -48,17 +48,21 @@ uv run pytest tests/unit
 
 [Development commands](docs/commands.md) cover optional dependencies, integration checks, and release workflows.
 
-## Tech stack
+## Technology
 
-| Layer | Technology and role |
-| --- | --- |
-| Model execution | vLLM/SGLang serving engines; PyTorch reference decoder; JAX/Flax visual reference generator |
-| Request handling | FastAPI and SSE, Bun/TypeScript edge, gRPC visual worker |
-| Routing and quotas | Ray Serve routing; Redis shared quotas |
-| State and artifacts | SQLAlchemy/SQLite, PostgreSQL and S3 adapters, content-addressed artifacts |
-| Workflow and tracking | Airflow release orchestration, MLflow export |
-| Operations | OpenTelemetry, Prometheus, Grafana, Docker |
-| Cluster configuration | KubeRay/Helm and Terraform definitions for an operator-managed AWS deployment |
+**Python · FastAPI · Ray Serve · vLLM/SGLang · Airflow · MLflow**
+
+Python and FastAPI expose streaming inference APIs, Ray Serve coordinates routing across eligible engine processes, and vLLM/SGLang own GPU model execution and batching. Airflow coordinates release workflows, while MLflow records model and benchmark evidence. SQLite and SQLAlchemy support durable local job and release state.
+
+### Integrations
+
+Configure the integrations your deployment needs:
+
+- **Model execution:** PyTorch provides the reference decoder, while JAX/Flax and gRPC support the visual reference worker.
+- **State and quotas:** Redis provides shared quota state; PostgreSQL and S3 adapters support persistent metadata and artifacts beyond the local SQLite path.
+- **Observability:** OpenTelemetry traces requests and model operations, with Prometheus and Grafana for metrics and dashboards.
+- **Edge and application:** Bun/TypeScript provides the edge layer and GraphQL exposes read-only experiment evidence.
+- **Infrastructure:** Docker supports local services; KubeRay, Helm and Terraform define operator-managed Kubernetes and AWS deployment paths.
 
 ## How it works
 
