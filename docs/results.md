@@ -152,3 +152,9 @@ Model size and capacity settings changed together: 3B used memory fraction0.60 a
 The public Hugging Face Space runs as a free static site at https://chinmayarvind-finserve.static.hf.space/. It contains aggregate results and local setup instructions. Hosted HTML, CSS and linked assets were verified against the exact packaged source. It runs no inference service or evidence registry.
 
 Real Chromium checks at desktop and mobile widths verified the public page and local setup navigation. Separate recordings show the full local evidence explorer reading retained GPU benchmark results and the failed historical quality gate. See [demo artifacts and scope](demo.md). AWS configuration remains optional, undeployed infrastructure; no paid cloud resources were provisioned.
+
+## Independent selected-model evaluation
+
+The unchanged 7B configuration was selected before a single evaluation on a separately generated 48-case suite. The suite, seed, generator, expected answers and prompt-derived format map were frozen and hash-verified before inference. All 48 requests completed; 42 were correct (87.5%), so the gate failed. The six errors span operating margins (two), decimal arithmetic (one), scientific notation (one) and yes/no reasoning (two). No postprocessing, tuning or repeat evaluation changed this score.
+
+The suite is now consumed. Its result is distinct from 55/56 on earlier regressions and does not measure model-to-model parity. Raw-output hashes and independent evaluator recomputation agree in correctness-holdout-run-01/independent-verification.json. Exact runtime cleanup was verified. This small generated evaluation demonstrates remaining generalization errors; it is not a broad financial benchmark.
