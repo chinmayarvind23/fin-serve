@@ -25,6 +25,8 @@ A later image-bound Qwen2.5-1.5B diagnostic with explicit chat-role mapping scor
 
 A subsequent structured-output diagnostic completed all 56 requests and improved correctness to 26/32 on the release suite and 17/20 on the now-consumed holdout. Its release gate still failed; no paired performance gain or model-to-model parity is claimed.
 
+The latest 7B AWQ candidate answered **55/56 consumed regression cases correctly (98.2%)**: 32/32 release, 4/4 historical and 19/20 expanded cases. One time-comparison error remains. These separate correctness runs establish no new throughput gain or fresh-holdout score. The public results page presents each experiment with its own scope.
+
 ![Sustained comparison: faster throughput and lower p95, worse TTFT, and a failed correctness gate](docs/assets/sustained-comparison.png)
 
 ## Current capabilities
