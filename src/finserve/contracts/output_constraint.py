@@ -131,7 +131,9 @@ class OutputConstraint(BaseModel):
         if self.kind == "yes_no":
             return {"choice": ["yes", "no"]}
         if self.kind == "json_object":
-            properties: dict[str, object] = {field.name: field.value_schema() for field in self.fields}
+            properties: dict[str, object] = {
+                field.name: field.value_schema() for field in self.fields
+            }
             return {
                 "json": {
                     "type": "object",
