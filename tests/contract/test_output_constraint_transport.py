@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from finserve.contracts.inference import ChatMessage, ChatRequest, InferenceRequest
+from finserve.contracts.inference import ChatMessage, ChatRequest, EngineToken, InferenceRequest
 from finserve.contracts.output_constraint import ObjectField, OutputConstraint
 from finserve.engines.fixture import FixtureEngine
 from finserve.engines.openai_adapter import EngineProtocolError, OpenAICompletionEngine
@@ -25,8 +25,8 @@ def mock_engine(text: str, *, finish: str = "stop") -> tuple[VLLMEngine, list[di
         payload = json.loads(request.content)
         requests.append(payload)
         content = {"delta": {"content": text}} if "messages" in payload else {"text": text}
-        terminal = {"delta": {}} if "messages" in payload else {"text": ""}
-        frames = [
+        terminal: dict[str, object] = {"delta": {}} if "messages" in payload else {"text": ""}
+        frames: list[dict[str, object]] = [
             {"choices": [{"index": 0, **content, "finish_reason": None}]},
             {"choices": [{"index": 0, **terminal, "finish_reason": finish}]},
             {"choices": [], "usage": {"completion_tokens": 3}},
@@ -81,7 +81,7 @@ async def test_partial_or_invalid_output_never_publishes_success(raw: str, finis
         )
     )
     engine, _ = mock_engine(raw, finish=finish)
-    seen = []
+    seen: list[EngineToken] = []
     try:
         with pytest.raises(EngineProtocolError, match="shape"):
             async for token in engine.stream(
@@ -140,7 +140,7 @@ async def test_ray_relay_preserves_the_typed_constraint() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         """Validate the actual outbound body and return two well-formed engine envelopes."""
         observed.append(InferenceRequest.model_validate_json(request.content))
-        frames = [
+        frames: list[dict[str, object]] = [
             {"replica_id": "vllm", "token": {"text": "yes", "generated_tokens": 0}},
             {
                 "replica_id": "vllm",

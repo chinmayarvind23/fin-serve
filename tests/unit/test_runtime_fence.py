@@ -25,6 +25,7 @@ async def test_unsupported_platform_fails_before_lock_or_action(
 @pytest.mark.skipif(os.name != "posix", reason="POSIX kernel fence")
 async def test_child_task_cannot_inherit_parent_lock_ownership(tmp_path: Path) -> None:
     """Reentrance is limited to the owner task even though asyncio copies context variables."""
+
     async def child() -> None:
         """The copied context cannot authorize work while the parent still owns its lock."""
         async with asyncio.timeout(0.1), attempt_fence(tmp_path):

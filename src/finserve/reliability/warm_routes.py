@@ -207,9 +207,12 @@ class WarmRouteStore:
     def is_retired(self, revision_id: str) -> bool:
         """Expose irreversible retirement for local idle connection-pool reclamation."""
         with self.transaction() as connection:
-            return connection.execute(
-                "SELECT 1 FROM warm_retirements WHERE id=?", (revision_id,)
-            ).fetchone() is not None
+            return (
+                connection.execute(
+                    "SELECT 1 FROM warm_retirements WHERE id=?", (revision_id,)
+                ).fetchone()
+                is not None
+            )
 
     def _require_available(self, connection: sqlite3.Connection, revision_id: str) -> None:
         """A retired producer revision cannot become traffic after cleanup has been authorized."""
