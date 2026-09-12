@@ -130,4 +130,25 @@ A local warm-route fault drill restored the expected healthy revision in 0.680 s
 
 ## Targets still requiring evidence
 
-94 requests/s, improved median TTFT at the selected envelope, 99.2% quality parity, 81% mean GPU utilization, 37% lower equivalent-quality GPU cost and a 94-second cloud rollback remain unachieved or unmeasured. Successful local checks, configuration validation and mocked cloud tests do not establish deployed AWS/Hugging Face operation.
+94 requests/s, improved median TTFT at the selected envelope, 99.2% quality parity, 81% mean GPU utilization, 37% lower equivalent-quality GPU cost and a 94-second cloud rollback remain unachieved or unmeasured. The free static Hugging Face site is deployed; it does not establish cloud inference. Successful local checks, configuration validation and mocked cloud tests do not establish AWS operation.
+
+## Stronger quantized correctness candidates
+
+Two later image-bound runs kept the same 56 regression prompts, expected answers and evaluator. The 3B run added prompt-derived scientific-notation and JSON null/array shapes; the 7B run retained that map and instruction.
+
+| Candidate | Release cohort | Historical cohort | Expanded regression | HTTP completion |
+| --- | ---: | ---: | ---: | ---: |
+| Qwen2.5-3B-Instruct-AWQ | 32/32 (100%) | 3/4 (75%) | 17/20 (85%) | 56/56 |
+| Qwen2.5-7B-Instruct-AWQ | 32/32 (100%) | 4/4 (100%) | 19/20 (95%) | 56/56 |
+
+The 7B result is 55/56 correct (98.2%). Its remaining error answers ?no? when asked whether a journey from 09:10 to 09:35 exceeds twenty minutes. Raw model outputs were graded without answer repair. These consumed suites are regression evidence, not an independent quality estimate or baseline-model parity measurement.
+
+Both images used source a69e7bd5edbc2a01c51f40d32e57bc20725122fa. The 3B image is sha256:4dac2a01ad08c8d63ee1ef00e1dac2cdfdce392f7f2f4222f7d02d46e23be08e; the 7B image is sha256:1427d1531519cc2ae9e0736bf5447177252bfcc959cc095a7de284b64fe10102. Model revisions, manifests, runtime starts, raw responses and cleanup receipts remain in structured-quality-arm-03 and structured-quality-arm-04 outside the repository. Each owned container was stopped and removed.
+
+Model size and capacity settings changed together: 3B used memory fraction0.60 and four sequences; 7B used0.85 and one sequence. These runs do not isolate either change's performance effect. The historical throughput comparison above retains its original results and failed qualification.
+
+## Free deployment and browser verification
+
+The public Hugging Face Space runs as a free static site at https://chinmayarvind-finserve.static.hf.space/. It contains aggregate results and local setup instructions. Hosted HTML, CSS and linked assets were verified against the exact packaged source. It runs no inference service or evidence registry.
+
+Real Chromium checks at desktop and mobile widths verified the public page and local setup navigation. Separate recordings show the full local evidence explorer reading retained GPU benchmark results and the failed historical quality gate. See [demo artifacts and scope](demo.md). AWS configuration remains optional, undeployed infrastructure; no paid cloud resources were provisioned.
