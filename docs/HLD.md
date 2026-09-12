@@ -55,6 +55,19 @@ cannot be automatically aborted, even when no container is visible. Windows fail
 managed launch/abort; this protocol requires a shared trusted workspace with working POSIX
 file locks. Existing completed launch receipts retain their normal replay and stop semantics.
 
+New local route stores also support retirement of previously served runtimes. The gateway
+registers each pinned response as a durable obligation in the same transaction that selects
+its route. An inactive revision can be retired only when it is absent from every current
+route and controller active/known-good target. Retirement blocks new admissions and rollback
+to that revision; runtime cleanup proceeds only after all registered obligations have closed.
+Borrowed producer collectors hold the same kind of obligation through collection and client
+shutdown, so another job's promotion cannot make their runtime disappear. Crashes or uncertain
+closure retain obligations without a TTL. Legacy route stores remain protected rather than
+being upgraded while an older gateway might still hold an untracked stream. This is a local
+SQLite protocol for cooperating gateways and producer entry points; arbitrary direct backend
+clients are outside its ownership proof. GPU retirement under this new protocol remains
+unmeasured; race and closure behavior is verified with CPU/HTTP fixtures.
+
 The warm deployment adapter changes route truth with an expected revision and generation. Existing requests retain their pinned backend; new requests read the new route. Rollback is healthy only after a real inference probe observes the expected revision and the active generation remains unchanged. This operation switches running endpoints; it does not imply a bounded cold image pull, model load or node recovery.
 
 ## Infrastructure and current limits

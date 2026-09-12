@@ -30,6 +30,45 @@ The source packages below are implemented. Runtime and acceptance limits are sep
 | `telemetry/langfuse_probe.py` | Bounded local ingestion and API verification of exact trace/span identity without prompt content |
 | `http_ownership.py` | One retained response-close task through repeated cancellation, with explicit unresolved cleanup failure |
 
+## Durable warm-runtime drain
+
+Fresh route stores initialize `durable-http-close-v1`. Their route snapshots carry an
+`admission_protocol` field that older extra-forbid schemas reject. SQLite triggers reject
+legacy route, event and action writes; a racing old initializer cannot publish an untracked
+route. Existing stores are never retrofitted. Ordinary legacy gateway and route replay remain
+available, but historical-runtime reclamation is disabled for those stores.
+
+`WarmRouteStore.admit` selects the route, binds its immutable backend and inserts a unique
+`warm_admissions` row under the retirement transaction fence. `WarmRouteMiddleware` holds the
+obligation through the whole ASGI response. Direct `create_app(WarmRouteEngine(...))` plus
+middleware composition participates too; an untracked engine composition rejects. The lease
+contains the endpoint binding so an already admitted stream can finish after retirement
+blocks ordinary backend lookup. `AdmissionTransport` counts entry before backend send and
+wraps each response in the shielded owned-close stream. An obligation is released only after
+ASGI work unwinds and every entered backend response has a positively completed close task,
+or no backend send was entered. Receiving DONE alone is insufficient. A failed send, failed
+close, lost acknowledgement or process death leaves a durable row. Outstanding rows are
+bounded at 4,096; their age never authorizes removal.
+
+`retire_drained` acquires route then control transactions, rejects any current route or
+active/known-good controller target, and persists an irreversible retirement tombstone.
+It writes an immutable `WarmDrainReceipt` only when zero obligations remain, in that same
+transaction. No transaction waits for a stream to finish. A later cleanup call can complete
+a pending drain. `cleanup_unserved` uses this path when historical traffic prevents the
+never-served path, keeps endpoints reserved while obligations remain, and reports
+`needs_reconciliation` instead of treating that pending cleanup as settled. Exact runtime
+stop and endpoint release follow the drain proof; retired identities cannot be reactivated.
+
+A new producer `FrozenExecution.collection_protocol` rejects older task parsers.
+`producer_pipeline.borrowed_collection` atomically verifies the current stable borrowed
+revision and registers an obligation before any borrowed task work. The obligation outlives
+both collection and HTTP-client closure. The helper checks exact frozen input, store identity,
+revision and owning asyncio task; copied child-task context cannot authorize another task.
+Successful completion acknowledges the row, while any exception, cancellation or process
+death conservatively retains it for explicit reconciliation. Borrower cleanup still never
+stops its foreign baseline. Once successful borrowers finish and another release is stable,
+the original owner may reclaim its now-inactive runtime.
+
 ## Stream accounting and ownership
 
 Explicit output constraints survive chat conversion and Ray serialization. Unconstrained requests omit the new field to preserve existing wire identities. The vLLM adapter translates fixed typed shapes into `structured_outputs`; unknown native capabilities and fixture/reference engines reject them. Warm routing selects the adapter from the pinned backend revision. These choices do not change engine batching or the release evaluator.
@@ -44,8 +83,8 @@ never served a warm route and are absent from every controller's active and know
 The retirement transaction locks routes before controller state and fences subsequent route
 writes. The endpoint remains reserved until exact process stop is verified; only then can a
 new revision reuse it. Retired identities and their original receipts remain immutable.
-Previously served revisions remain protected because the gateway has no durable proof that
-all pinned streams have drained. Incomplete launches with the immutable
+Previously served revisions in legacy stores remain protected because those gateways have
+no durable proof that all pinned streams have drained. Incomplete launches with the immutable
 `operation_protocol=posix-flock-abort-v1` input use explicit abort reconciliation. Legacy or
 unknown protocols remain unresolved; adding a marker later cannot prove an old executor drained.
 
@@ -130,8 +169,10 @@ expected workspace path, then freezes the release plan before offering inference
 validates task names at runtime and uses one-colon journal IDs such as
 `job:baseline-performance`. Only the job ID and task name cross the orchestration boundary;
 each task reloads immutable inputs. Launch and collector retry behavior stays with the
-existing durable stages. Full DAG deployment, probation and failure cleanup are still being
-connected; this task runtime alone is not complete release automation.
+existing durable stages. The 18-task DAG integrates deployment, probation and failure cleanup. Actual GPU
+acceptance remains incomplete: run 01 failed during model rehash with ENOMEM and
+verified owned cleanup; run 02 was prepared in native WSL but shared-GPU preflight
+prevented launch. It produced no new quality or performance evidence.
 
 Probation completion reconstructs the full monitor observation chain and requires at least
 two healthy probes, the configured number of probes, and the configured interval between
@@ -220,3 +261,7 @@ Both node groups ignore subsequent `scaling_config[0].desired_size` drift. CPU i
 `infra/kubernetes/node-autoscaler` accepts only clusterName, awsAccountId and awsRegion. Release and service account are fixed to finserve-cluster-autoscaler in kube-system; Kubernetes minor must be 1.35. It derives the Terraform role ARN and uses the official CA 1.35.2 image index aac369dc283927a623deb1af54696efcc722ae79255aa07788422e495bab887d. Explicit leader-lock and status ConfigMap names match the namespaced write permissions. Creation is namespace-scoped without resourceNames, as required by Kubernetes. Cluster-wide reads support scheduling and mandatory DRA metadata; node updates and Pod evictions support drain. Optional provisioning-request and capacity-buffer clients are disabled, and their write permissions are absent.
 
 The single controller requests 100m CPU/600Mi on CPU nodes, caps total nodes at four and drains at most one at a time. It runs without host mounts and disables EC2 metadata credential fallback; the API token and EKS-injected IRSA token retain distinct purposes. Conservative local-storage/custom-controller checks can prevent scale-down. The system-Pod check has an upstream one-hour timeout, not an absolute exemption. A real container parsed the exact rendered flags plus --help with no credentials and networking disabled. This verifies the binary interface, not API/RBAC admission or live reconciliation.
+
+The warm gateway caches at most 32 backend clients. At capacity it closes an idle
+retired pool before allocating another; local stream ownership remains pinned when
+HTTP closure is uncertain. Pool eviction supplies no remote runtime drain proof.

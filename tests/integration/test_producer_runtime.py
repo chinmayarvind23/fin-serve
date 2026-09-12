@@ -29,6 +29,7 @@ from finserve.registry.metadata import Registry, RegistryConflict
 from finserve.registry.produced_release import register_produced_release
 from finserve.registry.producer_pipeline import (
     ProducerExecution,
+    borrowed_collection,
     execution_input,
     freeze_stage,
     verify_borrowed_baseline,
@@ -282,6 +283,14 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                 == template.image.image_manifest_digest
             )
             daemons: dict[str, CohortDaemon] = {}
+
+            def cleanup_command(
+                arguments: list[str], directory: Path, output: Path, timeout: float
+            ) -> None:
+                """Dispatch independently identified fixture containers by owned directory."""
+                name = "baseline" if "baseline" in directory.parts else "candidate"
+                daemons[name](arguments, directory, output, timeout)
+
             for name, runtime_spec in zip(("baseline", "candidate"), runtimes, strict=True):
                 daemons[name] = CohortDaemon(runtime_spec)
                 runtime = DockerRuntime(daemons[name])
@@ -308,6 +317,13 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                 assert (
                     await asyncio.to_thread(rollout_stage, spec.job_id, "probation") == spec.job_id
                 )
+                # The first stable promotion drains and reclaims the old owned baseline,
+                # while preserving the candidate that the next job will borrow.
+                assert await cleanup_unserved(
+                    journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)
+                ) == {"baseline": "stopped", "candidate": "preserved_for_traffic"}
+                assert daemons["baseline"].container is None
+                assert daemons["candidate"].container is not None
                 second = ProducerInput.model_validate(
                     {
                         **spec.model_dump(),
@@ -349,13 +365,14 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                 fresh = CohortDaemon(second_runtimes[1])
                 for name, daemon in (("baseline", daemons["candidate"]), ("candidate", fresh)):
                     for action in ("launch", "quality", "performance"):
-                        await produce_step(
-                            journal,
-                            "second",
-                            cast(ProducerStep, name + "_" + action),
-                            http,
-                            DockerRuntime(daemon),
-                        )
+                        async with borrowed_collection(journal, execution_input(journal, "second")):
+                            await produce_step(
+                                journal,
+                                "second",
+                                cast(ProducerStep, name + "_" + action),
+                                http,
+                                DockerRuntime(daemon),
+                            )
                 assert journal.history("second:baseline-launch") == []
                 assert journal.state("producer:candidate-launch") == original_launch
                 assert (
@@ -383,22 +400,16 @@ async def test_producer_derives_actual_build_and_runs_collectors(
                     await asyncio.to_thread(rollout_stage, spec.job_id, "prepare")
                 assert routes.history(spec.deployment_id) == []
 
-            def cleanup_command(
-                arguments: list[str], directory: Path, output: Path, timeout: float
-            ) -> None:
-                """Dispatch independently identified fixture containers by owned directory."""
-                name = "baseline" if "baseline" in directory.parts else "candidate"
-                daemons[name](arguments, directory, output, timeout)
-
             routes = WarmRouteStore(tmp_path / "routes.sqlite")
             control = DeploymentStore(tmp_path / "control.sqlite")
             await asyncio.to_thread((runtimes[0].model_directory / "config.json").unlink)
             cleaned = await cleanup_unserved(
                 journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)
             )
-            expected = "preserved_for_traffic" if rollout else "stopped"
-            assert cleaned == {"baseline": expected, "candidate": expected}
-            assert all((daemon.container is None) != rollout for daemon in daemons.values())
+            # After the second stable rollout, neither original owned revision has live
+            # traffic or outstanding pins. Borrower cleanup above still excludes its baseline.
+            assert cleaned == {"baseline": "stopped", "candidate": "stopped"}
+            assert all(daemon.container is None for daemon in daemons.values())
             assert (
                 await cleanup_unserved(
                     journal, spec.job_id, routes, control, DockerRuntime(cleanup_command)

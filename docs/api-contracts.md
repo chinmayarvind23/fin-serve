@@ -60,3 +60,24 @@ It is not a readiness receipt. Partial failures retain intent and evidence witho
 launch failure. Producer `cleanup_unserved` reports `aborted` only after terminal verification;
 `needs_reconciliation` keeps the retired endpoint reserved. POSIX process locking and a shared
 trusted runtime workspace are required; Windows launch/abort fails closed.
+
+
+## Warm-runtime drain ownership
+
+These are trusted Python operations, not public HTTP cleanup endpoints:
+
+- `WarmRouteStore.admit(deployment_id)` atomically returns a pinned `AdmissionLease` and records
+  its durable obligation. Only the owning gateway finalizer acknowledges confirmed closure.
+- `WarmRouteStore.retire_drained(control, backend)` returns true only after permanent admission
+  retirement and zero outstanding obligations are recorded together. Current routes,
+  active/known-good targets, legacy protocols and unresolved obligations prevent reclamation.
+- `WarmDrainReceipt` binds the store identity, revision/digest, admission protocol, zero
+  remaining obligations and observation time in the route database.
+- `producer_pipeline.borrowed_collection` owns a direct collector obligation through task and
+  client cleanup. Borrowed network helpers require that exact task/execution/store/revision
+  context. Failed tasks retain their obligation; no heartbeat or timeout expires it.
+
+Producer cleanup reports `needs_reconciliation` for an incomplete drain and retains the
+endpoint reservation. It preserves the existing exact runtime-stop receipt after successful
+drain. New protocol stores reject old readers/writers through snapshot schema and SQLite
+write guards; existing stores cannot be upgraded in place to claim old streams drained.

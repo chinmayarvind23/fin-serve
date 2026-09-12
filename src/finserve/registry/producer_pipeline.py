@@ -2,16 +2,18 @@
 
 import asyncio
 import os
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
+from typing import Any, Literal
 
 import httpx
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from finserve.contracts.deployment import ImmutableModel
 from finserve.contracts.rollout import RolloutSettings
 from finserve.registry.managed_runtime import DockerRuntime
+from finserve.registry.model_assets import owned_disk
 from finserve.registry.pipeline import runtime
 from finserve.registry.producer_runtime import (
     ProducerInput,
@@ -24,8 +26,9 @@ from finserve.registry.producer_runtime import (
 )
 from finserve.registry.producer_stages import ProducerStages
 from finserve.registry.producer_tasks import declare_input
-from finserve.reliability.rollback import DeploymentStore
+from finserve.reliability.rollback import ControlConflict, DeploymentStore
 from finserve.reliability.store_identity import existing_identity
+from finserve.reliability.warm_drain import ADMISSION_PROTOCOL, collector_admission
 from finserve.reliability.warm_routes import BackendConfiguration, WarmBackend, WarmRouteStore
 
 
@@ -71,6 +74,15 @@ class FrozenExecution(ImmutableModel):
     execution: ProducerExecution
     routes_identity: str = Field(pattern=r"^[0-9a-f]{32}$")
     control_identity: str = Field(pattern=r"^[0-9a-f]{32}$")
+    collection_protocol: Literal["durable-http-close-v1"] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Old stores retain frozen execution bytes; new executions reject old task parsers."""
+        result: dict[str, Any] = handler(self)
+        if self.collection_protocol is None:
+            result.pop("collection_protocol", None)
+        return result
 
     def stores(self) -> tuple[WarmRouteStore, DeploymentStore]:
         """Open without initialization; each subsequent transaction rechecks the same identity."""
@@ -162,11 +174,60 @@ def freeze_stage(*, require_rollout: bool = False) -> str:
             execution=execution,
             routes_identity=existing_identity(execution.routes),
             control_identity=existing_identity(execution.control),
+            collection_protocol=WarmRouteStore(
+                execution.routes, expected_identity=existing_identity(execution.routes)
+            ).admission_protocol,
         )
         if not journal.history(job_id + ":execution"):
             verify_borrowed_baseline(journal, frozen)
         declare_input(journal, job_id + ":execution", frozen.model_dump(mode="json"))
         return job_id
+
+
+@asynccontextmanager
+async def borrowed_collection(
+    journal: ProducerStages, frozen: FrozenExecution
+) -> AsyncGenerator[None]:
+    """Protect each borrowed task through collection and client close; failed tasks retain proof."""
+    spec = frozen.execution.producer
+    routes, control = await owned_disk(frozen.stores)
+    if spec.existing_baseline_stage is None or routes.admission_protocol is None:
+        yield
+        return
+    if frozen.collection_protocol != ADMISSION_PROTOCOL or collector_admission.get() is not None:
+        raise ControlConflict("borrowed collection requires its immutable execution protocol")
+    launch = await owned_disk(lambda: existing_baseline(journal, spec))
+    backend = WarmBackend(
+        revision=launch.revision,
+        serving_profile=launch.profile,
+        configuration=BackendConfiguration(
+            base_url=launch.profile.base_url, model=launch.profile.served_model
+        ),
+    )
+    lease = await owned_disk(
+        lambda: routes.require_stable_baseline(
+            control,
+            spec.deployment_id,
+            backend,
+            spec.expected_generation,
+            reserve=True,
+        )
+    )
+    assert lease is not None
+    reference = await owned_disk(lambda: journal.state(spec.job_id + ":execution").input)
+    token = collector_admission.set(
+        (lease, reference.sha256, routes.identity, asyncio.current_task())
+    )
+    try:
+        yield
+    except BaseException:
+        # Stage-specific cleanup may be uncertain; a generic wrapper cannot infer a
+        # successful native/HTTP drain from exception type or executor age.
+        raise
+    else:
+        await owned_disk(lambda: routes.finish_admission(lease))
+    finally:
+        collector_admission.reset(token)
 
 
 def collection_client() -> httpx.AsyncClient:
@@ -182,8 +243,9 @@ def collection_stage(job_id: str, step: ProducerStep) -> str:
 
         async def collect() -> str:
             """Use one client lifetime per task; inner stages retain cancellation ownership."""
-            async with collection_client() as client:
-                return await produce_step(journal, job_id, step, client, DockerRuntime())
+            async with borrowed_collection(journal, frozen):
+                async with collection_client() as client:
+                    return await produce_step(journal, job_id, step, client, DockerRuntime())
 
         return asyncio.run(collect())
 

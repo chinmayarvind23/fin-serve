@@ -2,15 +2,17 @@
 
 import asyncio
 import hashlib
+import json
 import sqlite3
 import time
 from collections.abc import Generator
 from contextlib import closing, contextmanager
 from pathlib import Path
-from typing import Self
+from typing import Any, Literal, Self
+from uuid import uuid4
 
 import httpx
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from finserve.contracts.deployment import (
     DeploymentState,
@@ -30,6 +32,13 @@ from finserve.reliability.rollback import (
     load_record,
 )
 from finserve.reliability.store_identity import initialize_identity, open_existing, verify_identity
+from finserve.reliability.warm_drain import (
+    ADMISSION_PROTOCOL,
+    AdmissionLease,
+    WarmDrainReceipt,
+    initialize_admissions,
+    read_admission_protocol,
+)
 
 
 class BackendConfiguration(ImmutableModel):
@@ -92,10 +101,21 @@ class RouteSnapshot(ImmutableModel):
     revision_digest: str
     generation: int = Field(ge=0, strict=True)
     changed_at: float = Field(gt=0)
+    admission_protocol: Literal["durable-http-close-v1"] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Keep legacy bytes; new payloads reject old extra-forbid readers."""
+        result: dict[str, Any] = handler(self)
+        if self.admission_protocol is None:
+            result.pop("admission_protocol", None)
+        return result
 
 
 class WarmRouteStore:
     """External traffic truth is separate from orchestration intent but owns the final CAS fence."""
+
+    admission_protocol: Literal["durable-http-close-v1"] | None
 
     def __init__(self, path: Path, *, expected_identity: str | None = None) -> None:
         """Keep SQLite WAL/FULL state outside source, with short transactions around cutovers."""
@@ -103,10 +123,11 @@ class WarmRouteStore:
         repository = Path(__file__).resolve().parents[3]
         if self.path == repository or repository in self.path.parents:
             raise ValueError("routing truth must be outside the source repository")
+        new_store = not self.path.exists()
         if expected_identity is not None:
             self.identity = expected_identity
-            with self.transaction():
-                pass
+            with self.transaction() as connection:
+                self.admission_protocol = read_admission_protocol(connection)
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path, isolation_level=None)) as connection:
@@ -123,6 +144,8 @@ class WarmRouteStore:
                     digest TEXT NOT NULL);
             """)
             self.identity = initialize_identity(connection)
+            initialize_admissions(connection, new_store=new_store)
+            self.admission_protocol = read_admission_protocol(connection)
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection]:
@@ -181,12 +204,148 @@ class WarmRouteStore:
             raise KeyError("warm backend not registered")
         return WarmBackend.model_validate_json(row[0])
 
+    def is_retired(self, revision_id: str) -> bool:
+        """Expose irreversible retirement for local idle connection-pool reclamation."""
+        with self.transaction() as connection:
+            return connection.execute(
+                "SELECT 1 FROM warm_retirements WHERE id=?", (revision_id,)
+            ).fetchone() is not None
+
     def _require_available(self, connection: sqlite3.Connection, revision_id: str) -> None:
         """A retired producer revision cannot become traffic after cleanup has been authorized."""
         if connection.execute(
             "SELECT 1 FROM warm_retirements WHERE id=?", (revision_id,)
         ).fetchone():
             raise ControlConflict("backend revision is retired")
+
+    def admit(self, deployment_id: str) -> AdmissionLease:
+        """Select route and persist its stream obligation in one retirement-fenced transaction."""
+        with self.transaction() as connection:
+            route = self._snapshot(connection, deployment_id)
+            if (
+                read_admission_protocol(connection) != ADMISSION_PROTOCOL
+                or route.admission_protocol != ADMISSION_PROTOCOL
+            ):
+                raise ControlConflict("legacy route cannot use durable admission")
+            self._require_available(connection, route.revision_id)
+            row = connection.execute(
+                "SELECT payload FROM warm_backends WHERE id=?", (route.revision_id,)
+            ).fetchone()
+            if row is None:
+                raise ControlConflict("admission backend is missing")
+            backend = WarmBackend.model_validate_json(row[0])
+            if backend.revision.digest() != route.revision_digest:
+                raise ControlConflict("admission backend identity changed")
+            return self._insert_admission(connection, route, backend)
+
+    def _insert_admission(
+        self, connection: sqlite3.Connection, route: RouteSnapshot, backend: WarmBackend
+    ) -> AdmissionLease:
+        """Gateway and collector obligations share the same atomic retirement fence and cap."""
+        if connection.execute("SELECT COUNT(*) FROM warm_admissions").fetchone()[0] >= 4096:
+            raise ControlConflict("durable admission limit reached")
+        lease = AdmissionLease(uuid4().hex, route, backend)
+        connection.execute(
+            "INSERT INTO warm_admissions VALUES(?,?,?)",
+            (
+                lease.admission_id,
+                route.revision_id,
+                json.dumps(
+                    {
+                        "route": route.model_dump(mode="json"),
+                        "backend": backend.model_dump(mode="json"),
+                    },
+                    sort_keys=True,
+                ),
+            ),
+        )
+        return lease
+
+    def finish_admission(self, lease: AdmissionLease) -> None:
+        """Only an exact locally closed response releases its durable stream obligation."""
+        if not lease.verified_closed:
+            raise ControlConflict("backend transport closure is unresolved")
+        expected = json.dumps(
+            {
+                "route": lease.snapshot.model_dump(mode="json"),
+                "backend": lease.backend.model_dump(mode="json"),
+            },
+            sort_keys=True,
+        )
+        with self.transaction() as connection:
+            row = connection.execute(
+                "SELECT payload FROM warm_admissions WHERE admission_id=?", (lease.admission_id,)
+            ).fetchone()
+            if row is None or row[0] != expected:
+                raise ControlConflict("admission identity changed or already released")
+            connection.execute(
+                "DELETE FROM warm_admissions WHERE admission_id=?", (lease.admission_id,)
+            )
+
+    def retire_drained(self, control: DeploymentStore, backend: WarmBackend) -> bool:
+        """Permanently fence an inactive revision and prove no durable stream obligations remain."""
+        if self.path == control.path:
+            raise ValueError("route and control stores require separate database files")
+        revision = backend.revision
+        with self.transaction() as connection, control.transaction() as controller:
+            if read_admission_protocol(connection) != ADMISSION_PROTOCOL:
+                return False
+            for (payload,) in connection.execute("SELECT payload FROM warm_routes"):
+                if RouteSnapshot.model_validate_json(payload).revision_id == revision.revision_id:
+                    return False
+            for (payload,) in controller.execute("SELECT payload FROM deployments"):
+                state = DeploymentState.model_validate_json(payload)
+                if revision.revision_id in {state.active_revision, state.known_good_revision}:
+                    return False
+            row = connection.execute(
+                "SELECT payload FROM warm_backends WHERE id=?", (revision.revision_id,)
+            ).fetchone()
+            if row is None or WarmBackend.model_validate_json(row[0]) != backend:
+                raise ControlConflict("drain backend identity changed")
+            for (payload,) in connection.execute("SELECT payload FROM warm_events"):
+                if (
+                    RouteSnapshot.model_validate_json(payload).admission_protocol
+                    != ADMISSION_PROTOCOL
+                ):
+                    return False
+            prior = connection.execute(
+                "SELECT digest FROM warm_retirements WHERE id=?", (revision.revision_id,)
+            ).fetchone()
+            if prior is not None and prior[0] != revision.digest():
+                raise ControlConflict("drain retirement identity changed")
+            connection.execute(
+                "INSERT OR IGNORE INTO warm_retirements VALUES(?,?)",
+                (revision.revision_id, revision.digest()),
+            )
+            if connection.execute(
+                "SELECT 1 FROM warm_admissions WHERE revision_id=? LIMIT 1", (revision.revision_id,)
+            ).fetchone():
+                return False
+            receipt = WarmDrainReceipt(
+                store_identity=self.identity,
+                revision_id=revision.revision_id,
+                revision_digest=revision.digest(),
+                observed_at=time.time(),
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO warm_drain_receipts VALUES(?,?)",
+                (revision.revision_id, receipt.model_dump_json()),
+            )
+            return True
+
+    def drain_pending(self, backend: WarmBackend) -> bool:
+        """A retired revision without terminal drain evidence must not count as settled cleanup."""
+        with self.transaction() as connection:
+            if read_admission_protocol(connection) != ADMISSION_PROTOCOL:
+                return False
+            return (
+                connection.execute(
+                    "SELECT 1 FROM warm_retirements r WHERE r.id=? AND r.digest=? "
+                    "AND NOT EXISTS (SELECT 1 FROM warm_drain_receipts d WHERE d.revision_id=r.id)",
+                    (backend.revision.revision_id, backend.revision.digest()),
+                ).fetchone()
+                is not None
+            )
 
     def retire_unserved(self, control: DeploymentStore, backend: WarmBackend) -> bool:
         """Fence never-served revisions before stopping their exact producer runtime.
@@ -299,6 +458,7 @@ class WarmRouteStore:
                 revision_digest=backend.revision.digest(),
                 generation=0,
                 changed_at=time.time(),
+                admission_protocol=self.admission_protocol,
             )
             self._save(connection, state)
             return state
@@ -309,8 +469,10 @@ class WarmRouteStore:
         deployment_id: str,
         backend: WarmBackend,
         generation: int,
-    ) -> None:
-        """Bind a borrowed runtime to route/controller truth before fresh collection."""
+        *,
+        reserve: bool = False,
+    ) -> AdmissionLease | None:
+        """Optionally reserve a borrowed runtime in the same transaction as stable validation."""
         if self.path == control.path:
             raise ValueError("route and control stores require separate database files")
         revision = backend.revision
@@ -336,6 +498,14 @@ class WarmRouteStore:
                 or state.rollback_id is not None
             ):
                 raise ControlConflict("borrowed baseline is not the current stable deployment")
+            if reserve:
+                if (
+                    read_admission_protocol(connection) != ADMISSION_PROTOCOL
+                    or route.admission_protocol != ADMISSION_PROTOCOL
+                ):
+                    raise ControlConflict("legacy store cannot reserve a collector")
+                return self._insert_admission(connection, route, backend)
+            return None
 
     def acknowledge_baseline(
         self,
@@ -409,6 +579,7 @@ class WarmRouteStore:
                 revision_digest=backend.revision.digest(),
                 generation=current.generation + 1,
                 changed_at=time.time(),
+                admission_protocol=self.admission_protocol,
             )
             self._save(connection, updated)
             connection.execute(

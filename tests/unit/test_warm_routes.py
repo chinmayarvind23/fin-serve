@@ -13,7 +13,12 @@ from starlette.types import Receive, Scope, Send
 from finserve.contracts.deployment import Revision
 from finserve.contracts.inference import InferenceRequest
 from finserve.gateway.body_limit import BodyLimit
-from finserve.gateway.warm_route_app import WarmRouteEngine, WarmRouteMiddleware, request_route
+from finserve.gateway.warm_route_app import (
+    WarmRouteEngine,
+    WarmRouteMiddleware,
+    request_admission,
+    request_route,
+)
 from finserve.reliability.rollback import ApplyRequest, ControlConflict
 from finserve.reliability.warm_routes import (
     BackendConfiguration,
@@ -275,11 +280,15 @@ async def test_missing_credential_and_unpinned_stream_fail_before_client_creatio
         with pytest.raises(RuntimeError, match="pinned"):
             _ = [item async for item in engine.stream(InferenceRequest(prompt="test"))]
         token = request_route.set(snapshot)
+        lease = store.admit("service")
+        admission_token = request_admission.set(lease)
         try:
             with pytest.raises(ValueError, match="credential"):
                 _ = [item async for item in engine.stream(InferenceRequest(prompt="test"))]
         finally:
             request_route.reset(token)
+            request_admission.reset(admission_token)
+            store.finish_admission(lease)
         assert not engine.clients
     finally:
         await engine.close()
@@ -308,7 +317,8 @@ async def test_route_unavailable_rejects_without_downstream_work(tmp_path: Path)
 async def test_receipt_precedes_route_lookup_and_survives_body_middleware(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preexisting: bool
 ) -> None:
-    """Route lookup time counts toward the same request receipt used by body/admission handling."""
+    """Legacy route timing still counts toward request receipt through body/admission handling."""
+    await asyncio.to_thread((tmp_path / "routes.db").touch)
     store, _, _ = seeded(tmp_path)
     expected = 5.0 if preexisting else 10.0
     observed: list[float] = []

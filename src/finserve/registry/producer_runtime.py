@@ -1,5 +1,6 @@
 """Server-owned task runtime deriving collection identities from actual model and image receipts."""
 
+import asyncio
 import json
 from functools import partial
 from pathlib import Path
@@ -44,6 +45,7 @@ from finserve.registry.runtime_stages import (
 )
 from finserve.reliability.promotion import PromotionPolicy
 from finserve.reliability.rollback import DeploymentStore
+from finserve.reliability.warm_drain import ADMISSION_PROTOCOL, collector_admission
 from finserve.reliability.warm_routes import BackendConfiguration, WarmBackend, WarmRouteStore
 
 
@@ -273,6 +275,26 @@ ProducerStep = Literal[
 ]
 
 
+def require_collector_lease(journal: ProducerStages, spec: ProducerInput, task: object) -> None:
+    """New borrowed network tasks cannot bypass the exact execution/store/revision obligation."""
+    history = journal.history(spec.job_id + ":execution")
+    if not history:
+        raise ValueError("borrowed network work requires a frozen execution")
+    frozen = json.loads(journal.artifacts.get(history[-1].input))
+    if frozen.get("collection_protocol") != ADMISSION_PROTOCOL:
+        return  # Legacy stores never authorize reclamation of historical runtimes.
+    context = collector_admission.get()
+    launch = existing_baseline(journal, spec)
+    if (
+        context is None
+        or context[1] != history[-1].input.sha256
+        or context[2] != frozen["routes_identity"]
+        or context[3] is not task
+        or context[0].backend.revision != launch.revision
+    ):
+        raise ValueError("borrowed network work requires its exact collector lease")
+
+
 async def produce_step(
     journal: ProducerStages,
     job_id: str,
@@ -284,6 +306,9 @@ async def produce_step(
     if step not in get_args(ProducerStep):
         raise ValueError("unsupported producer action")
     spec = await owned_disk(lambda: producer_input(journal, job_id))
+    asyncio_task = asyncio.current_task()
+    if spec.existing_baseline_stage is not None and step.startswith("baseline_"):
+        await owned_disk(lambda: require_collector_lease(journal, spec, asyncio_task))
     if step == "fetch":
         await fetch_stage(journal, job_id + ":model", client, spec.model, spec.workspace / "models")
         return job_id
@@ -399,7 +424,10 @@ async def cleanup_unserved(
         )
         retired = await owned_disk(partial(routes.retire_unserved, control, backend))
         if not retired:
-            outcomes[name] = "preserved_for_traffic"
+            retired = await owned_disk(partial(routes.retire_drained, control, backend))
+        if not retired:
+            pending = await owned_disk(partial(routes.drain_pending, backend))
+            outcomes[name] = "needs_reconciliation" if pending else "preserved_for_traffic"
             continue
         if state.status == "completed":
             await stop_runtime_stage(
