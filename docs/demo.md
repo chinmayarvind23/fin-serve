@@ -1,16 +1,25 @@
 ﻿# Demo status and recording sequence
 
-The recorded video and GIF are pending browser visual verification. The [free static results Space](https://huggingface.co/spaces/chinmayarvind/finserve) is deployed and passes HTTPS asset checks. The full explorer passes local HTTP and DOM checks; these are not a browser recording. Raw local evidence is retained outside the repository. Use the [local setup guide](run-free.md) for the running application and GPU inference.
+The evidence explorer now has actual Chromium recordings at 1440×1000 and 390×1000. The short, silent clips show the retained eager/compiled comparison, workload-slice selection, failed quality gate and expanded failure reasons. Browser checks passed for navigation, horizontal overflow and page errors; all four screenshots and a decoded video frame were visually reviewed. Authentication used a masked, ephemeral key and both owned CPU services stopped after capture.
 
-The recording will show these implemented behaviors with visible run identities:
+Private review artifacts are outside the repository at `resources/fin_serve/evidence/explorer-demo-02`: `walkthrough-1440.webm` (8.48 seconds), `walkthrough-390.webm` (7.84 seconds), four comparison/quality PNGs, and `recording-manifest.json`. The manifest binds the exact source snapshot, SQLite backup, run IDs and capture SHA256 hashes. Source HEAD was `27bd10ccf4b48a4e3a9d35d6d9a42c08cf95f368`; per-file hashes identify the captured worktree. The earlier namespace-check failure remains in `explorer-demo-01`.
 
-1. Open the evidence explorer and compare the 3,072-request eager and compiled runs. Show throughput, TTFT, p95 and physical GPU sample coverage.
-2. Open the failed quality report and exact request outputs. Explain why the faster candidate was rejected.
-3. Send an authenticated text request through Bun and FastAPI to an actual engine. Show authoritative final usage and the selected runtime identity.
-4. Submit an image plus text request using the frozen bar-chart probe. Identify it as a functional example; show the separate failed uniform-color suite.
-5. Submit a durable JAX/Flax visual job, retrieve its PNG and explain the reference model's scope.
-6. Show a release decision and an actual warm-route rollback with revision-checked traffic. Separate the local fixture drill from any subsequent GPU or cloud lifecycle test.
+The capture shows historical runs `914c1f2b-6dde-4d99-850c-ca099b6841de` and `a4c55327-0e45-4506-9987-3b234327dcff`, each with 3,072 measured requests. It retains the faster candidate's failed quality qualification. These clips demonstrate reading existing evidence, not a new inference run or the latest correctness candidate. The original videos remain private. Use the [local setup guide](run-free.md) to run the application.
 
-Capture credentials only through masked input. Keep private prompts, environment values and unrelated desktop content out of the recording. Link the final video, GIF and reproducible commands here after capture; publish only the evidence actually shown.
+![Actual explorer comparison and failed quality detail](assets/explorer-demo.gif)
+
+The [repository GIF](assets/explorer-demo.gif) samples the reviewed desktop recording at 2.5 frames/second, retaining its full 1440×1000 dimensions. Its 22 frames play for 8.8 seconds; palette and frame-difference compression reduce it to 2.88 MB. Decoded comparison and quality frames were reviewed for readable metrics, explicit failure status and absence of secrets. No frames were invented. GIF SHA256: `ecd332db926446956415230607ef5f1927a6f701bd21d2c9c3078992792bfdc4`.
+
+Workspace-only links, outside a clean repository clone: [desktop video](../../resources/fin_serve/evidence/explorer-demo-02/walkthrough-1440.webm), [mobile video](../../resources/fin_serve/evidence/explorer-demo-02/walkthrough-390.webm), [recording manifest](../../resources/fin_serve/evidence/explorer-demo-02/recording-manifest.json), and [GIF conversion manifest](../../resources/fin_serve/evidence/explorer-demo-02/gif-manifest.json). The full private GIF master is retained beside these files. The GIF has not been added to the Hugging Face publication bundle.
+
+The remaining full-demo sequence is still pending:
+
+1. Inspect exact request outputs alongside the failed quality report, with private prompts excluded from publication.
+2. Send an authenticated text request through Bun and FastAPI to an actual engine, showing final usage and runtime identity.
+3. Submit an image-plus-text request using the frozen bar-chart probe and show the separate failed uniform-color suite.
+4. Submit a durable JAX/Flax visual job, retrieve its PNG and explain the reference model's scope.
+5. Show a release decision and actual warm-route rollback with revision-checked traffic, distinguishing fixture drills from GPU or cloud lifecycle tests.
+
+Keep credentials masked and private prompts, environment values and unrelated desktop content out of recordings. Publish only reviewed evidence actually captured.
 
 The [results page](results.md), [architecture](HLD.md) and [commands](commands.md) remain usable when a GPU service is offline. No simulated cloud deployment or reconstructed benchmark screen substitutes for the live checks.

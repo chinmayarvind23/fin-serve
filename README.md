@@ -94,7 +94,9 @@ Engines own batching, model execution and GPU memory. Ray owns routing leases. R
 - [Multimodal implementation](src/finserve/multimodal/README.md)
 - [Deployment](docs/deployment.md) and [demo status](docs/demo.md)
 
-A real demo recording and GIF will be added after browser visual verification and deployment. No mock screenshot or simulated deployment is presented as that deliverable.
+The GIF below comes from an actual Chromium walkthrough of the local evidence explorer. It compares the historical eager/compiled runs and opens their failed quality report. This is recorded evidence browsing; the full inference and rollback demo remains pending. [Capture scope and private video details](docs/demo.md).
+
+![Actual FinServe explorer: historical serving comparison followed by the failed quality gate](docs/assets/explorer-demo.gif)
 
 ## Next improvements
 
