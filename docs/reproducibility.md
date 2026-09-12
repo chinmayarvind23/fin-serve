@@ -47,8 +47,7 @@ Collection retains invalid raw output as failed work. Syntax validation also run
 evidence reconstruction, so relabeling an invalid shape as successful fails verification.
 Completion and chat quality evidence both require the full mapping identity. A valid shape may
 still be wrong under the unchanged evaluator. Collector and sequential producer integration
-tests cover these boundaries with explicit synthetic HTTP/Docker fixtures. Actual constrained
-GPU quality, tokenizer grammar compilation and first-use latency measurements remain pending.
+tests cover these boundaries with explicit synthetic HTTP/Docker fixtures. Actual constrained GPU quality collection is complete; the selected 7B model scored 55/56 on consumed regressions and 42/48 on an independently frozen evaluation. Runtime logs retain grammar compilation observations, but isolated compilation and first-use latency costs remain unmeasured.
 
 Some earlier native recordings explicitly declare image and configuration digests unknown. Do not substitute a later container build for that missing identity. The runtime producer creates a separate verified model manifest and image from an exact source archive. Its model bytes are checked again before startup. A new source build or prompt-to-chat mapping is a new cohort, even if it reuses the same workload cases.
 
