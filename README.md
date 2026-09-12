@@ -94,9 +94,11 @@ Engines own batching, model execution and GPU memory. Ray owns routing leases. R
 - [Multimodal implementation](src/finserve/multimodal/README.md)
 - [Deployment](docs/deployment.md) and [demo status](docs/demo.md)
 
-The GIF below comes from an actual Chromium walkthrough of the local evidence explorer. It compares the historical eager/compiled runs and opens their failed quality report. This is recorded evidence browsing; the full inference and rollback demo remains pending. [Capture scope and private video details](docs/demo.md).
+The GIF below comes from an actual Chromium walkthrough of the local evidence explorer. It compares the historical eager/compiled runs and opens their failed quality report. Separate recordings now demonstrate a real CPU JAX/gRPC visual job and a real HTTP warm rollback with synthetic backends. The pretrained text/image inference recording remains pending. [Capture scope and private video details](docs/demo.md).
 
 ![Actual FinServe explorer: historical serving comparison followed by the failed quality gate](docs/assets/explorer-demo.gif)
+
+The full local CPU suite on `5f217fa` passed **1,101 tests**, with **49 skipped** and **88.65% combined statement/branch coverage**, above the unchanged 85% gate. The skips cover unavailable Helm/schema tools, Airflow and opt-in live Ray/Redis checks; this result is not a hosted CI or GPU acceptance claim. Subsequent strict-type and formatting corrections passed Pyright and Ruff.
 
 ## Next improvements
 

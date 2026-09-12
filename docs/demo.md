@@ -23,6 +23,8 @@ The visual capture binds source `5f217fa` and job `2ef71650-4a69-4ab5-8f9f-66980
 
 Both capture directories include manifests, original observations and reviewed screenshots. The rollback WebM decoded without errors. Earlier unsuccessful capture attempts and the second rollback capture's missing phase labels remain retained. Neither recording contains credentials, and neither has been uploaded to the static Space.
 
+The [36.16-second component walkthrough](../../resources/fin_serve/evidence/component-walkthrough-01/finserve-components.mp4) joins the original desktop explorer, CPU visual-job and rollback clips in that order. It preserves their playback speed and visible scope statements. The adjacent manifest binds all three originals and the encoded MP4 by SHA256; the complete MP4 decoded successfully. These component recordings use their separately documented source versions and do not yet include pretrained text or vision inference.
+
 The remaining full-demo sequence is:
 
 1. Inspect exact request outputs alongside the failed quality report, with private prompts excluded from publication.
