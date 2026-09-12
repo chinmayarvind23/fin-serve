@@ -1,4 +1,6 @@
-﻿# Demo status and recording sequence
+# Recorded FinServe walkthrough
+
+The [49.48-second walkthrough](../../resources/fin_serve/evidence/final-walkthrough-01/finserve-walkthrough.mp4) combines the evidence explorer, CPU JAX/gRPC job, warm rollback, and actual pretrained text/image requests. The private MP4 preserves the original playback speed and each component's scope. Full decode passed; SHA256 is `94a3d610e8384b7d3e1b4c159412e063039e7091c33def184ff92f024dfb2ee9`.
 
 The evidence explorer now has actual Chromium recordings at 1440×1000 and 390×1000. The short, silent clips show the retained eager/compiled comparison, workload-slice selection, failed quality gate and expanded failure reasons. Browser checks passed for navigation, horizontal overflow and page errors; all four screenshots and a decoded video frame were visually reviewed. Authentication used a masked, ephemeral key and both owned CPU services stopped after capture.
 
@@ -25,12 +27,9 @@ Both capture directories include manifests, original observations and reviewed s
 
 The [36.16-second component walkthrough](../../resources/fin_serve/evidence/component-walkthrough-01/finserve-components.mp4) joins the original desktop explorer, CPU visual-job and rollback clips in that order. It preserves their playback speed and visible scope statements. The adjacent manifest binds all three originals and the encoded MP4 by SHA256; the complete MP4 decoded successfully. These component recordings use their separately documented source versions and do not yet include pretrained text or vision inference.
 
-The remaining full-demo sequence is:
+The [13.32-second pretrained API capture](../../resources/fin_serve/evidence/text-vision-edge-demo-03/actual-vision-edge.webm) adds one text request and three image requests through production Bun and FastAPI to the pinned Qwen2-VL-2B model. All four returned HTTP 200 and complete SSE; the retained chart probes returned red, green and blue correctly. This is reused diagnostic evidence, not a new quality benchmark. The separate uniform-color suite remains failed. Source `66b5501`, exact API process identity, raw responses, image hashes, screenshots and cleanup receipts accompany the clip.
 
-1. Inspect exact request outputs alongside the failed quality report, with private prompts excluded from publication.
-2. Send an authenticated text request through Bun and FastAPI to an actual engine, showing final usage and runtime identity.
-3. Submit an image-plus-text request using the frozen bar-chart probe and show the separate failed uniform-color suite.
-4. Connect the recorded component demonstrations into the final walkthrough, keeping the visual-only API host and fixture rollback scopes visible alongside actual pretrained inference.
+The recorder uses a real API client and displays completed SSE responses in the browser; it does not demonstrate a live browser streaming interface. The original browser-fetch attempt failed before sending requests and remains retained. Both CPU services stopped, and the owned GPU process group was verified empty. The 2B vision model used for this recording is distinct from the 3B/7B correctness candidates.
 
 Keep credentials masked and private prompts, environment values and unrelated desktop content out of recordings. Publish only reviewed evidence actually captured.
 

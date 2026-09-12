@@ -39,7 +39,7 @@ The latest 7B AWQ candidate answered **55/56 consumed regression cases correctly
 - **Release evidence:** immutable SQL metadata, local/S3 artifact adapters, MLflow integration, a shared canonical-profile gate for CLI/Airflow and warm route rollback with exact revision checks.
 - **Evidence explorer:** read-only GraphQL, paired run metrics, workload slices, quality failures, GPU coverage and request records. The initial read service supports local SQLite and content-addressed files.
 - **Observability:** linked private gateway/Ray/engine traces, sanitized local Langfuse ingestion, and a provisioned text-gateway dashboard with tested Prometheus outage alerts. Browser rendering and hosted operations remain separate checks.
-- **Infrastructure:** pinned container builds, bounded local Compose services, Helm/KubeRay configuration and a validated Terraform AWS foundation. The [free local setup](docs/run-free.md) runs the full explorer and optional GPU inference without cloud services. A separate static Hugging Face package publishes aggregate results; the Docker explorer passes local container checks. Cloud inference and the full recorded demo remain pending.
+- **Infrastructure:** pinned container builds, bounded local Compose services, Helm/KubeRay configuration and a validated Terraform AWS foundation. The [free local setup](docs/run-free.md) runs the full explorer and optional GPU inference without cloud services. A separate static Hugging Face package publishes aggregate results; the Docker explorer passes local container checks. Cloud inference remains an optional user-run deployment.
 
 ## Run locally
 
@@ -95,7 +95,7 @@ Engines own batching, model execution and GPU memory. Ray owns routing leases. R
 - [Multimodal implementation](src/finserve/multimodal/README.md)
 - [Deployment](docs/deployment.md) and [demo status](docs/demo.md)
 
-The GIF below comes from an actual Chromium walkthrough of the local evidence explorer. It compares the historical eager/compiled runs and opens their failed quality report. Separate recordings now demonstrate a real CPU JAX/gRPC visual job and a real HTTP warm rollback with synthetic backends. The pretrained text/image inference recording remains pending. [Capture scope and private video details](docs/demo.md).
+The GIF below comes from an actual Chromium walkthrough of the local evidence explorer. The complete private 49.48-second walkthrough also includes a real CPU JAX/gRPC visual job, HTTP warm rollback with synthetic backends, and actual pretrained text/image responses through Bun and FastAPI. [Capture scope and video details](docs/demo.md).
 
 ![Actual FinServe explorer: historical serving comparison followed by the failed quality gate](docs/assets/explorer-demo.gif)
 
