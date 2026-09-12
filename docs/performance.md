@@ -1,6 +1,6 @@
 # Performance engineering
 
-No optimized release has passed FinServe's required correctness gate. Measurements retain faster candidates that failed quality and routing cohorts that rejected most offered requests. [Recorded results](results.md) contains the central result table.
+The short 3B prefix-cache release passed the frozen correctness gate and full GPU lifecycle; historical failed candidates remain separate evidence. Measurements retain faster candidates that failed quality and routing cohorts that rejected most offered requests. [Recorded results](results.md) contains the central result table.
 
 ## Current evidence
 

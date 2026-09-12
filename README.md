@@ -6,6 +6,8 @@ A faster server can still return incorrect answers or lose work during cancellat
 
 ## Measured results
 
+**Latest verified release:** the full GPU Airflow workflow passed, followed by automatic one-to-two-to-one engine capacity. A separate 512-request prefix-cache trial cut median client TTFT from **247 to 116 ms** and passed **32/32 consumed release cases**. [Release and capacity evidence](docs/results.md) distinguish this result from the sustained comparison and broader quality evaluations below.
+
 A native RTX 4070 Laptop experiment compared eager and compiled vLLM 0.29.0 with pinned Qwen2.5-0.5B-Instruct weights. Each configuration retained 3,072 measured requests and 64 separate warmup requests against the same frozen workload at concurrency 16.
 
 | Measurement | Eager baseline | Compiled candidate |
@@ -33,7 +35,7 @@ The latest 7B AWQ candidate answered **55/56 consumed regression cases correctly
 
 - **Text serving:** bounded HTTP/SSE admission, cancellation ownership, authoritative token accounting, vLLM/SGLang adapters and an inspectable PyTorch reference decoder. The reference decoder has random weights and is not a quality model.
 - **Distributed routing:** a real Ray HTTP bridge to separately managed engine processes, endpoint eligibility, bounded leases and policy selection. Multiple proxy replicas do not imply multiple GPUs.
-- **Local model capacity:** an opt-in controller can add one equivalent model replica to a canonically approved primary, route authenticated requests across ready members, and drain the extra replica before stopping it. Durable ownership and physical request attribution are covered by real HTTP integration tests; the GPU capacity experiment remains pending. See the [capacity design](docs/HLD.md).
+- **Local model capacity:** an opt-in controller can add one equivalent model replica to a canonically approved primary, route authenticated requests across ready members, and drain the extra replica before stopping it. Durable ownership and physical request attribution are covered by real HTTP integration tests; the actual GPU capacity cycle passed, including natural downscale, durable drain and exact replica stop. See the [capacity design](docs/HLD.md).
 - **Image plus text:** authenticated single-PNG requests through a pretrained vision model, strict image validation and an actual local-versus-HTTP preprocessing experiment. Three counterfactual chart probes passed; the retained uniform-color suite failed.
 - **Visual generation jobs:** a JAX/Flax reference generator behind gRPC, SQLite job ownership, idempotent submission, fenced cancellation and verified PNG artifacts. This is a reference generator, not a pretrained image-generation product.
 - **Release evidence:** immutable SQL metadata, local/S3 artifact adapters, MLflow integration, a shared canonical-profile gate for CLI/Airflow and warm route rollback with exact revision checks.
@@ -105,6 +107,6 @@ The full local CPU suite on `66b5501` passed **1,134 tests**, with **49 skipped*
 
 **Product:** expand chart reasoning beyond three functional probes and improve broader and fresh-holdout correctness beyond the consumed release suite.
 
-**Architecture:** extend the accepted local runtime producer to multiple GPUs. The full real-GPU Airflow workflow now passes, including canonical gates, deployment, 60 probation probes and cleanup. Its separate 512-request prefix-cache trial reduced median client TTFT from 247 to 116 ms and passed all 32 consumed release correctness cases. Automatic GPU capacity acceptance remains the final local hardware check. AWS deployment remains an optional user-run path. The text trace chain passes actual Ray/HTTP integration checks.
+**Architecture:** extend the accepted local runtime producer to multiple GPUs. The full real-GPU Airflow workflow now passes, including canonical gates, deployment, 60 probation probes and cleanup. Its separate 512-request prefix-cache trial reduced median client TTFT from 247 to 116 ms and passed all 32 consumed release correctness cases. The automatic GPU capacity cycle also passed; overload failures are retained in the capacity result. AWS deployment remains an optional user-run path. The text trace chain passes actual Ray/HTTP integration checks.
 
 **Engineering:** repeat and randomize paired measurements, distinguish physical GPU telemetry from per-engine cache occupancy, measure real billed cost, and exercise node/process loss separately from warm route rollback. These remaining checks are tracked explicitly rather than inferred from passing unit tests.

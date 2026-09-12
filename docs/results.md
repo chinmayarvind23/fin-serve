@@ -10,6 +10,12 @@ Both arms used Qwen2.5-3B-Instruct-AWQ, eager vLLM 0.29.0, four sequences and an
 
 These are consumed release cases, not a fresh holdout or general quality guarantee. The short comparison does not replace the sustained throughput experiment or establish a production SLA. Earlier broad quality failures remain unresolved evidence. The local release result does not establish an AWS deployment.
 
+## Verified automatic local capacity cycle
+
+`capacity-gpu-producer-05` enrolled the canonically approved primary, detected serving load, started one equivalent GPU engine, routed requests to both, then naturally downscaled after load ended. The final controller state is closed with no error, no unresolved extra-replica obligations and a completed exact stop receipt. Independent inspection confirmed the extra container was removed; the borrowed primary was explicitly removed after the experiment.
+
+The mechanical stimulus offered 1,286 requests: 116 completed (84 on the primary and 32 on the extra), with 1,170 failures retained under overload. This verifies the lifecycle, not a throughput, correctness or availability improvement. The reporting helper raised `NoResultFound` afterward when it queried an optional abort stage that did not exist. The original error remains retained; a separate read-only audit reconstructed the outcome from unchanged request records, policy events, drain and launch/stop receipts.
+
 ## Sustained native text comparison
 
 Both runs used clean source `241615dc04e3623e078500de7bded65f43e30ab6`, vLLM 0.29.0, Qwen2.5-0.5B-Instruct model/tokenizer revision `7ae557604adf67be50417f59c2c2f167def9a775`, one RTX 4070 Laptop GPU, concurrency 16, context 2,048, and disabled prefix caching/speculation. The workload hash is `ec5b6d6b04fff5ad77d8ad3205e0c9c5e9f90dcc0aed5380792d7d4754789e54`.

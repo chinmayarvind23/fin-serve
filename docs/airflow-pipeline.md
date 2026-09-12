@@ -23,7 +23,7 @@ The separate `finserve_producer_lifecycle` DAG now connects collection, canonica
 evaluation, route preparation, deployment, acknowledgment, probation and cleanup for local
 deployments. Producer integration tests cover rejection and two consecutive synthetic approved
 releases. Actual Airflow execution with synthetic task callbacks verifies success and gate-failure
-cleanup. A full live GPU run through Airflow remains pending.
+cleanup. The full live GPU run through Airflow passed in `gpu-producer-airflow-05`.
 
 The trusted worker configures `FINSERVE_PIPELINE_REQUEST`, `FINSERVE_REGISTRY_URL` and `FINSERVE_ARTIFACT_ROOT`. The request identifies existing baseline/candidate run directories, raw quality outputs, a frozen suite, immutable revisions, policy and both canonical serving profiles. Database and artifact references must retain their original namespace across retries.
 
@@ -41,7 +41,7 @@ It exits 0 for approval, 2 for rejection and 3 for invalid evidence. The manual 
 
 Deployment loads the server-configured `FINSERVE_DEPLOYMENT_ADAPTER` factory and recomputes the gate before invoking it. Lifecycle leases, immutable request identities and adapter idempotency govern retries. Uncertain external action is reconciled through exact-revision health rather than blindly repeated. A decision supplied by an arbitrary caller is not an authorization capability.
 
-The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images or start pods. After lifecycle promotion, `release_activation.acknowledge_release` recomputes the canonical gate, verifies the recorded lifecycle decision, probes current traffic and records the exact activation in the rollback controller. It requires the persisted lifecycle route-action receipt and holds the route write lock during controller acknowledgment. Repeating it does not increment the generation again. The previous known-good revision remains unchanged. After a complete healthy monitor window, `release_activation.complete_probation` rechecks approval and current traffic before advancing known-good with retained observation evidence. The local producer DAG calls these stages for initial deployments and updates; full live GPU execution remains pending. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
+The warm adapter switches traffic between already running registered backends and probes the active route. It does not pull images or start pods. After lifecycle promotion, `release_activation.acknowledge_release` recomputes the canonical gate, verifies the recorded lifecycle decision, probes current traffic and records the exact activation in the rollback controller. It requires the persisted lifecycle route-action receipt and holds the route write lock during controller acknowledgment. Repeating it does not increment the generation again. The previous known-good revision remains unchanged. After a complete healthy monitor window, `release_activation.complete_probation` rechecks approval and current traffic before advancing known-good with retained observation evidence. The local producer DAG calls these stages for initial deployments and updates; full live GPU execution passed in `gpu-producer-airflow-05`. [ADR014](adr/ADR-014-rollback-known-good-revision.md) describes restoration rules.
 
 ## Local producer workflow
 
